@@ -3,35 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cliente Móvil - Pase de Lista</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
-        input, button { width: 100%; padding: 15px; margin-top: 10px; font-size: 16px; box-sizing: border-box; }
-        button { background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; }
-        #respuesta { margin-top: 20px; font-size: 18px; color: #007bff; }
-    </style>
+    <title>Pase de Lista - Móvil</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_telefono.css') }}">
 </head>
 <body>
-    <h2>Registro de Asistencia</h2>
-    <input type="text" id="nombreAlumno" placeholder="Ingresa tu nombre completo">
-    <button onclick="marcarLlegada()">¡MARCAR MI LLEGADA!</button>
-
-    <div id="respuesta"></div>
+    <div class="card">
+        <h2>Pase de Lista</h2>
+        <input type="text" id="nombreAlumno" placeholder="Ingresa tu nombre completo">
+        <button onclick="marcarLlegada()">REGISTRAR ASISTENCIA</button>
+        <div id="respuesta"></div>
+    </div>
 
     <script>
         async function marcarLlegada() {
             const nombre = document.getElementById('nombreAlumno').value;
             const divRespuesta = document.getElementById('respuesta');
 
-            if (!nombre) {
-                alert("Por favor ingresa tu nombre");
+            if (!nombre.trim()) {
+                divRespuesta.innerText = "Por favor ingresa tu nombre.";
+                divRespuesta.style.color = "#f87171";
                 return;
             }
 
-            divRespuesta.innerText = "Enviando paquete por la red...";
-
             try {
-                // Envío de mensaje HTTP POST al servidor central
                 const res = await fetch('/api/asistencia', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -40,8 +34,10 @@
 
                 const data = await res.json();
                 divRespuesta.innerText = data.mensaje;
+                divRespuesta.style.color = data.status === 'ok' ? '#34d399' : '#f87171';
             } catch (error) {
-                divRespuesta.innerText = "Error al conectar con el servidor.";
+                divRespuesta.innerText = "Error de conexión con el servidor.";
+                divRespuesta.style.color = "#f87171";
             }
         }
     </script>

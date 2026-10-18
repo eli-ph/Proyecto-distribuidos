@@ -4,38 +4,40 @@
     <meta charset="UTF-8">
     <title>Servidor de Pase de Lista - Dashboard</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <link rel="stylesheet" href="style_laptop.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
+
 </head>
 <body>
-    <h1>Registros en Tiempo Real</h1>
+    <h1 class="titulo_principal">Registro de asistencia</h1>
     <p>Estado de la red: <strong>Conectado y escuchando...</strong></p>
 
     <table>
         <thead>
-        <tr>
-            <th>Alumno</th>
-            <th>Hora</th>
-            <th>Estado</th>
-            <th>Señal BT (RSSI)</th>
-            <th>IP Cliente</th>
-        </tr>
+            <tr>
+                <th>Alumno</th>
+                <th>Hora de Registro</th>
+                <th>IP del Cliente</th>
+            </tr>
         </thead>
-        <tbody id="tabla-asistencia"></tbody>
+        <tbody id="tabla-asistencia">
+            <!-- Aquí irán apareciendo los registros automáticamente -->
+        </tbody>
+    </table>
 
-        <script>
-            const socket = io();
-            socket.on('nueva_asistencia', function(r) {
-                const tbody = document.getElementById('tabla-asistencia');
-                const fila = document.createElement('tr');
-                fila.innerHTML = `
-                    <td><strong>${r.nombre}</strong></td>
-                    <td>${r.hora}</td>
-                    <td><b style="color: ${r.estado === 'Asistencia' ? 'green' : 'orange'}">${r.estado}</b></td>
-                    <td>${r.rssi}</td>
-                    <td>${r.ip_cliente}</td>
-                `;
-                tbody.prepend(fila);
+    <script>
+        // Conexión por WebSocket al servidor en la laptop
+        const socket = io();
+
+        socket.on('nueva_asistencia', function(registro) {
+            const tbody = document.getElementById('tabla-asistencia');
+            const fila = document.createElement('tr');
+            fila.innerHTML = `
+                <td><strong>${registro.nombre}</strong></td>
+                <td>${registro.hora}</td>
+                <td>${registro.ip_cliente}</td>
+            `;
+            tbody.prepend(fila); // Agrega al inicio de la lista
         });
-        </script>
+    </script>
 </body>
 </html>
