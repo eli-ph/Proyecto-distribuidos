@@ -1,49 +1,113 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
-from datetime import datetime
+from datetime import datetime, time
 
 app = Flask(__name__)
-# Permitir conexiones desde cualquier origen en la red local
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Simulamos la lista de asistencia en memoria (Estado del Servidor)
+# --- BASE DE DATOS / CATÁLOGO OFICIAL DE ALUMNOS ---
+ALUMNOS_INSCRITOS = [
+    "Elizabeth Portilla Hermenegildo",
+    "Diego Ramírez",
+    "Celeste",
+    "Juan Pérez",
+    "Ana Gómez"
+]
+
 asistencias = []
+# Estructura inicial con contadores en 0
+alumnos_db = {nombre: {'asistencias': 0, 'retardos': 0, 'faltas': 0, 'registros': []} for nombre in ALUMNOS_INSCRITOS}
+
+HORA_CLASE = time(7, 0, 0)      # 07:00 AM
+TOLERANCIA_MINUTOS = 15         # Minutos de gracia
+RETARDO_MAX_MINUTOS = 30        # Límite de retardo
 
 @app.route('/')
 def vista_laptop():
-    """Pantalla principal que verá la profesora en la laptop."""
+    """Dashboard en tiempo real de asistencias del día."""
     return render_template('laptop.html')
+
+@app.route('/lista-general')
+def vista_lista_general():
+    """Nueva vista que muestra la lista general de alumnos y su estatus acumulado."""
+    return render_template('lista_general.html', alumnos=alumnos_db)
 
 @app.route('/marcar')
 def vista_telefono():
-    """Interfaz liviana que cargará el teléfono del alumno."""
     return render_template('telefono.html')
 
 @app.route('/api/asistencia', methods=['POST'])
 def registrar_asistencia():
-    """Endpoint REST que recibe el pase de lista del cliente (Teléfono)."""
     data = request.get_json()
-    nombre = data.get('nombre', 'Alumno Anónimo')
+    nombre_ingresado = data.get('nombre', '').strip()
     
-    # Marca de tiempo generada en el servidor para consistencia
-    hora_actual = datetime.now().strftime("%H:%M:%S")
-    
+    nombre_oficial = None
+    for alumno in ALUMNOS_INSCRITOS:
+        if alumno.lower() == nombre_ingresado.lower():
+            nombre_oficial = alumno
+            break
+
+    if not nombre_oficial:
+        return jsonify({
+            'status': 'error', 
+            'mensaje': 'Nombre no registrado o incorrecto. Verifica tus datos.'
+        }), 400
+
+    ahora = datetime.now()
+    hora_actual_time = ahora.time()
+    hora_str = ahora.strftime("%H:%M:%S")
+
+    # --- MOTOR DE REGLAS ---
+    minutos_clase = HORA_CLASE.hour * 60 + HORA_CLASE.minute
+    minutos_llegada = hora_actual_time.hour * 60 + hora_actual_time.minute
+    diff_minutos = minutos_llegada - minutos_clase
+
+    if diff_minutos <= TOLERANCIA_MINUTOS:
+        estado = "Asistencia"
+        color = "#34d399"
+        alumnos_db[nombre_oficial]['asistencias'] += 1
+    elif diff_minutos <= RETARDO_MAX_MINUTOS:
+        estado = "Retardo"
+        color = "#fbbf24"
+        alumnos_db[nombre_oficial]['retardos'] += 1
+    else:
+        estado = "Falta (Extemporáneo)"
+        color = "#f87171"
+        alumnos_db[nombre_oficial]['faltas'] += 1
+
     nuevo_registro = {
-        'nombre': nombre,
-        'hora': hora_actual,
+        'nombre': nombre_oficial,
+        'hora': hora_str,
+        'estado': estado,
+        'color': color,
         'ip_cliente': request.remote_addr
     }
-    
+
     asistencias.append(nuevo_registro)
-    
-    # EMISIÓN DISTRIBUIDA: Notifica inmediatamente a la pantalla de la laptop por WebSockets
+    alumnos_db[nombre_oficial]['registros'].append(nuevo_registro)
+
     socketio.emit('nueva_asistencia', nuevo_registro)
-    
+
     return jsonify({
         'status': 'ok',
-        'mensaje': f'Asistencia registrada exitosamente a las {hora_actual}'
+        'mensaje': f'¡Registrado como {nombre_oficial}! Estado: {estado}'
+    }), 200
+
+@app.route('/api/historial/<nombre>', methods=['GET'])
+def obtener_historial(nombre):
+    nombre_oficial = next((a for a in ALUMNOS_INSCRITOS if a.lower() == nombre.strip().lower()), None)
+    
+    if not nombre_oficial:
+        return jsonify({'error': 'Alumno no encontrado'}), 404
+        
+    datos = alumnos_db[nombre_oficial]
+    return jsonify({
+        'alumno': nombre_oficial,
+        'asistencias': datos['asistencias'],
+        'retardos': datos['retardos'],
+        'faltas': datos['faltas'],
+        'registros': datos['registros']
     }), 200
 
 if __name__ == '__main__':
-    # '0.0.0.0' permite que otros dispositivos en la red local accedan al servidor
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

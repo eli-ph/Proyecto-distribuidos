@@ -2,41 +2,48 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Servidor de Pase de Lista - Dashboard</title>
+    <title>Dashboard del Profesor - Sistema Distribuido</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
-
 </head>
 <body>
-    <h1 class="titulo_principal">Registro de asistencia</h1>
-    <p>Estado de la red: <strong>Conectado y escuchando...</strong></p>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>
+            <h1 class="titulo_principal" style="margin: 0;">Control de Asistencia en Tiempo Real</h1>
+            <p style="margin: 5px 0 0 0;">Estado de la red: <strong>Conectado y escuchando...</strong></p>
+        </div>
+        <!-- Botón para ir a la lista general de alumnos -->
+        <a href="/lista-general">
+            <button style="padding: 12px 20px; background-color: #0284c7; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;">
+                📋 Ver Lista General del Grupo
+            </button>
+        </a>
+    </div>
 
     <table>
         <thead>
             <tr>
                 <th>Alumno</th>
-                <th>Hora de Registro</th>
-                <th>IP del Cliente</th>
+                <th>Hora</th>
+                <th>Estado (Motor de Reglas)</th>
+                <th>IP Cliente</th>
             </tr>
         </thead>
-        <tbody id="tabla-asistencia">
-            <!-- Aquí irán apareciendo los registros automáticamente -->
-        </tbody>
+        <tbody id="tabla-asistencia"></tbody>
     </table>
 
     <script>
-        // Conexión por WebSocket al servidor en la laptop
         const socket = io();
-
-        socket.on('nueva_asistencia', function(registro) {
+        socket.on('nueva_asistencia', function(r) {
             const tbody = document.getElementById('tabla-asistencia');
             const fila = document.createElement('tr');
             fila.innerHTML = `
-                <td><strong>${registro.nombre}</strong></td>
-                <td>${registro.hora}</td>
-                <td>${registro.ip_cliente}</td>
+                <td><strong>${r.nombre}</strong></td>
+                <td>${r.hora}</td>
+                <td><b style="color: ${r.color}">${r.estado}</b></td>
+                <td>${r.ip_cliente}</td>
             `;
-            tbody.prepend(fila); // Agrega al inicio de la lista
+            tbody.prepend(fila);
         });
     </script>
 </body>

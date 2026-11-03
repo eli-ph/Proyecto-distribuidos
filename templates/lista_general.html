@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Lista General de Asistencia - Grupo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
+</head>
+<body>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>
+            <h1 class="titulo_principal" style="margin: 0;">Concentrado General de Alumnos</h1>
+            <p style="margin: 5px 0 0 0;">Historial acumulado del semestre</p>
+        </div>
+        <!-- Botón para regresar al dashboard en vivo -->
+        <a href="/">
+            <button style="padding: 12px 20px; background-color: #334155; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;">
+                Volver a pagina en vivo
+            </button>
+        </a>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre del Alumno</th>
+                <th style="text-align: center;">Asistencias</th>
+                <th style="text-align: center;">Retardos</th>
+                <th style="text-align: center;">Faltas</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for nombre, datos in alumnos.items() %}
+            <tr>
+                <td><strong>{{ nombre }}</strong></td>
+                <td style="text-align: center; color: #10fba4; font-weight: bold;">{{ datos.asistencias }}</td>
+                <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
+                <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

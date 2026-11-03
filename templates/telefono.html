@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pase de Lista - Móvil</title>
+    <title>Pase de Lista - Alumno</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_telefono.css') }}">
 </head>
 <body>
     <div class="card">
         <h2>Pase de Lista</h2>
+        
+        <!-- Entrada de texto por teclado -->
         <input type="text" id="nombreAlumno" placeholder="Ingresa tu nombre completo">
+
         <button onclick="marcarLlegada()">REGISTRAR ASISTENCIA</button>
+        <button onclick="consultarHistorial()" style="background-color: #0284c7; margin-top: 10px;">CONSULTAR MI HISTORIAL</button>
+        
         <div id="respuesta"></div>
+        <div id="estatusAlumno" style="margin-top: 15px; text-align: left; font-size: 14px;"></div>
     </div>
 
     <script>
@@ -20,7 +26,7 @@
             const divRespuesta = document.getElementById('respuesta');
 
             if (!nombre.trim()) {
-                divRespuesta.innerText = "Por favor ingresa tu nombre.";
+                divRespuesta.innerText = "Por favor escribe tu nombre.";
                 divRespuesta.style.color = "#f87171";
                 return;
             }
@@ -35,9 +41,42 @@
                 const data = await res.json();
                 divRespuesta.innerText = data.mensaje;
                 divRespuesta.style.color = data.status === 'ok' ? '#34d399' : '#f87171';
+                
+                if(data.status === 'ok') {
+                    consultarHistorial();
+                }
             } catch (error) {
                 divRespuesta.innerText = "Error de conexión con el servidor.";
                 divRespuesta.style.color = "#f87171";
+            }
+        }
+
+        async function consultarHistorial() {
+            const nombre = document.getElementById('nombreAlumno').value;
+            const divEstatus = document.getElementById('estatusAlumno');
+
+            if (!nombre.trim()) {
+                divEstatus.innerText = "Escribe tu nombre para ver el historial.";
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/historial/${encodeURIComponent(nombre)}`);
+                const data = await res.json();
+
+                if(res.ok) {
+                    divEstatus.innerHTML = `
+                        <hr style="border-color: #334155; margin: 15px 0;">
+                        <p><b>Historial de:</b> ${data.alumno}</p>
+                        <p>✅ Asistencias: <span style="color: #34d399; font-weight: bold;">${data.asistencias}</span></p>
+                        <p>⚠️ Retardos: <span style="color: #fbbf24; font-weight: bold;">${data.retardos}</span></p>
+                    `;
+                } else {
+                    divEstatus.innerText = "Alumno no encontrado en el sistema.";
+                    divEstatus.style.color = "#f87171";
+                }
+            } catch (err) {
+                divEstatus.innerText = "No se pudo cargar el historial.";
             }
         }
     </script>
