@@ -5,7 +5,7 @@ from datetime import datetime, time
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# --- BASE DE DATOS / CATÁLOGO OFICIAL DE ALUMNOS ---
+# --- BASE DE DATOS (Lista de alumnos) ---
 ALUMNOS_INSCRITOS = [
     "Elizabeth Portilla Hermenegildo",
     "Diego Ramírez",
@@ -15,12 +15,12 @@ ALUMNOS_INSCRITOS = [
 ]
 
 asistencias = []
-# Estructura inicial con contadores en 0
+
 alumnos_db = {nombre: {'asistencias': 0, 'retardos': 0, 'faltas': 0, 'registros': []} for nombre in ALUMNOS_INSCRITOS}
 
-HORA_CLASE = time(7, 0, 0)      # 07:00 AM
-TOLERANCIA_MINUTOS = 15         # Minutos de gracia
-RETARDO_MAX_MINUTOS = 30        # Límite de retardo
+HORA_CLASE = time(9, 0, 0)      # Hora de entrada 09:00 AM
+TOLERANCIA_MINUTOS = 15         # Minutos de tolerancia
+RETARDO_MAX_MINUTOS = 30        # Límite para retardo
 
 @app.route('/')
 def vista_laptop():
@@ -57,7 +57,7 @@ def registrar_asistencia():
     hora_actual_time = ahora.time()
     hora_str = ahora.strftime("%H:%M:%S")
 
-    # --- MOTOR DE REGLAS ---
+    # Dfinimos asistencia, retardo o falta según la hora de llegada
     minutos_clase = HORA_CLASE.hour * 60 + HORA_CLASE.minute
     minutos_llegada = hora_actual_time.hour * 60 + hora_actual_time.minute
     diff_minutos = minutos_llegada - minutos_clase
