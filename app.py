@@ -71,7 +71,7 @@ def registrar_asistencia():
         color = "#fbbf24"
         alumnos_db[nombre_oficial]['retardos'] += 1
     else:
-        estado = "Falta (Extemporáneo)"
+        estado = "Falta"
         color = "#f87171"
         alumnos_db[nombre_oficial]['faltas'] += 1
 

@@ -9,15 +9,15 @@
 <body>
     <div class="card">
         <h2>Pase de Lista</h2>
+        <p class="subtitle">Ingresa tu nombre para registrarte</p>
         
-        <!-- Entrada de texto por teclado -->
-        <input type="text" id="nombreAlumno" placeholder="Ingresa tu nombre completo">
+        <input type="text" id="nombreAlumno" placeholder="Nombre completo">
 
-        <button onclick="marcarLlegada()">REGISTRAR ASISTENCIA</button>
-        <button onclick="consultarHistorial()" style="background-color: #0284c7; margin-top: 10px;">CONSULTAR MI HISTORIAL</button>
+        <button class="btn btn-success" onclick="marcarLlegada()">REGISTRAR ASISTENCIA</button>
+        <button class="btn btn-info" onclick="consultarHistorial()">CONSULTAR MI HISTORIAL</button>
         
         <div id="respuesta"></div>
-        <div id="estatusAlumno" style="margin-top: 15px; text-align: left; font-size: 14px;"></div>
+        <div id="estatusAlumno"></div>
     </div>
 
     <script>
@@ -56,7 +56,7 @@
             const divEstatus = document.getElementById('estatusAlumno');
 
             if (!nombre.trim()) {
-                divEstatus.innerText = "Escribe tu nombre para ver el historial.";
+                divEstatus.innerText = "Escribe tu nombre arriba para ver tu historial.";
                 return;
             }
 
@@ -66,14 +66,13 @@
 
                 if(res.ok) {
                     divEstatus.innerHTML = `
-                        <hr style="border-color: #334155; margin: 15px 0;">
-                        <p><b>Historial de:</b> ${data.alumno}</p>
-                        <p>Asistencias: <span style="color: #34d399; font-weight: bold;">${data.asistencias}</span></p>
-                        <p>Retardos: <span style="color: #fbbf24; font-weight: bold;">${data.retardos}</span></p>
+                        <p style="margin: 0 0 8px 0;"><b>Historial de:</b> ${data.alumno}</p>
+                        <p style="margin: 4px 0;">Asistencias: <span style="color: #34d399; font-weight: bold;">${data.asistencias}</span></p>
+                        <p style="margin: 4px 0;">Retardos: <span style="color: #fbbf24; font-weight: bold;">${data.retardos}</span></p>
+                        <p style="margin: 4px 0;">Faltas: <span style="color: #f87171; font-weight: bold;">${data.faltas}</span></p>
                     `;
                 } else {
                     divEstatus.innerText = "Alumno no encontrado en el sistema.";
-                    divEstatus.style.color = "#f87171";
                 }
             } catch (err) {
                 divEstatus.innerText = "No se pudo cargar el historial.";

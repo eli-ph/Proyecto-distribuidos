@@ -19,25 +19,27 @@
         </a>
     </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Nombre del Alumno</th>
-                <th style="text-align: center;">Asistencias</th>
-                <th style="text-align: center;">Retardos</th>
-                <th style="text-align: center;">Faltas</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for nombre, datos in alumnos.items() %}
-            <tr>
-                <td><strong>{{ nombre }}</strong></td>
-                <td style="text-align: center; color: #10fba4; font-weight: bold;">{{ datos.asistencias }}</td>
-                <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
-                <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-container"> 
+        <table>
+            <thead>
+                <tr>
+                    <th>Nombre del Alumno</th>
+                    <th style="text-align: center;">Asistencias</th>
+                    <th style="text-align: center;">Retardos</th>
+                    <th style="text-align: center;">Faltas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for nombre, datos in alumnos.items() %}
+                <tr>
+                    <td><strong>{{ nombre }}</strong></td>
+                    <td style="text-align: center; color: #10fba4; font-weight: bold;">{{ datos.asistencias }}</td>
+                    <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
+                    <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </body>
 </html>
