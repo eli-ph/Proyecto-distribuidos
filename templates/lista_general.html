@@ -6,40 +6,39 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div>
-            <h1 class="titulo_principal" style="margin: 0;">Concentrado General de Alumnos</h1>
-            <p style="margin: 5px 0 0 0;">Historial acumulado del semestre</p>
+    <div class="container">
+        <div class="header-dash">
+            <div>
+                <h1 class="titulo_principal">Lista General de Alumnos</h1>
+                <p class="subtext">Historial acumulado por Número de Cuenta</p>
+            </div>
+            <a href="/" class="btn-secondary">Volver a tabla en tiempo real</a>
         </div>
-        <!-- Botón para regresar al dashboard en vivo -->
-        <a href="/">
-            <button style="padding: 12px 20px; background-color: #334155; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;">
-                Volver a pagina en vivo
-            </button>
-        </a>
-    </div>
 
-    <div class="table-container"> 
-        <table>
-            <thead>
-                <tr>
-                    <th>Nombre del Alumno</th>
-                    <th style="text-align: center;">Asistencias</th>
-                    <th style="text-align: center;">Retardos</th>
-                    <th style="text-align: center;">Faltas</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for nombre, datos in alumnos.items() %}
-                <tr>
-                    <td><strong>{{ nombre }}</strong></td>
-                    <td style="text-align: center; color: #10fba4; font-weight: bold;">{{ datos.asistencias }}</td>
-                    <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
-                    <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>No. de Cuenta</th>
+                        <th>Nombre del Alumno</th>
+                        <th style="text-align: center;">Asistencias</th>
+                        <th style="text-align: center;">Retardos</th>
+                        <th style="text-align: center;">Faltas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cuenta, datos in alumnos.items() %}
+                    <tr>
+                        <td><code>{{ cuenta }}</code></td>
+                        <td><strong>{{ datos.nombre }}</strong></td>
+                        <td style="text-align: center; color: #34d399; font-weight: bold;">{{ datos.asistencias }}</td>
+                        <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
+                        <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </body>
 </html>

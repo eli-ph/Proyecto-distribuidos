@@ -9,9 +9,10 @@
 <body>
     <div class="card">
         <h2>Pase de Lista</h2>
-        <p class="subtitle">Ingresa tu nombre para registrarte</p>
+        <p class="subtitle">Ingresa tu número de cuenta</p>
         
-        <input type="text" id="nombreAlumno" placeholder="Nombre completo">
+        <!-- Input para num de cuenta -->
+        <input type="text" id="numCuenta" placeholder="Numero de cuenta" autocomplete="off">
 
         <button class="btn btn-success" onclick="marcarLlegada()">REGISTRAR ASISTENCIA</button>
         <button class="btn btn-info" onclick="consultarHistorial()">CONSULTAR MI HISTORIAL</button>
@@ -22,11 +23,11 @@
 
     <script>
         async function marcarLlegada() {
-            const nombre = document.getElementById('nombreAlumno').value;
+            const cuenta = document.getElementById('numCuenta').value;
             const divRespuesta = document.getElementById('respuesta');
 
-            if (!nombre.trim()) {
-                divRespuesta.innerText = "Por favor escribe tu nombre.";
+            if (!cuenta.trim()) {
+                divRespuesta.innerText = "Por favor ingresa tu número de cuenta.";
                 divRespuesta.style.color = "#f87171";
                 return;
             }
@@ -35,7 +36,7 @@
                 const res = await fetch('/api/asistencia', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nombre: nombre })
+                    body: JSON.stringify({ numero_de_cuenta: cuenta })
                 });
 
                 const data = await res.json();
@@ -52,27 +53,28 @@
         }
 
         async function consultarHistorial() {
-            const nombre = document.getElementById('nombreAlumno').value;
+            const cuenta = document.getElementById('numCuenta').value;
             const divEstatus = document.getElementById('estatusAlumno');
 
-            if (!nombre.trim()) {
-                divEstatus.innerText = "Escribe tu nombre arriba para ver tu historial.";
+            if (!cuenta.trim()) {
+                divEstatus.innerText = "Escribe tu número de cuenta arriba.";
                 return;
             }
 
             try {
-                const res = await fetch(`/api/historial/${encodeURIComponent(nombre)}`);
+                const res = await fetch(`/api/historial/${encodeURIComponent(cuenta)}`);
                 const data = await res.json();
 
                 if(res.ok) {
                     divEstatus.innerHTML = `
-                        <p style="margin: 0 0 8px 0;"><b>Historial de:</b> ${data.alumno}</p>
+                        <p style="margin: 0 0 8px 0;"><b>Alumno:</b> ${data.alumno}</p>
+                        <p style="margin: 0 0 8px 0;"><b>Cuenta:</b> ${data.numero_de_cuenta}</p>
                         <p style="margin: 4px 0;">Asistencias: <span style="color: #34d399; font-weight: bold;">${data.asistencias}</span></p>
                         <p style="margin: 4px 0;">Retardos: <span style="color: #fbbf24; font-weight: bold;">${data.retardos}</span></p>
                         <p style="margin: 4px 0;">Faltas: <span style="color: #f87171; font-weight: bold;">${data.faltas}</span></p>
                     `;
                 } else {
-                    divEstatus.innerText = "Alumno no encontrado en el sistema.";
+                    divEstatus.innerText = "Número de cuenta no encontrado.";
                 }
             } catch (err) {
                 divEstatus.innerText = "No se pudo cargar el historial.";

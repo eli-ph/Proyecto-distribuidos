@@ -1,22 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 from datetime import datetime, time
+import database
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# --- BASE DE DATOS (Lista de alumnos) ---
-ALUMNOS_INSCRITOS = [
-    "Elizabeth Portilla Hermenegildo",
-    "Diego Ramírez",
-    "Celeste",
-    "Juan Pérez",
-    "Ana Gómez"
-]
-
-asistencias = []
-
-alumnos_db = {nombre: {'asistencias': 0, 'retardos': 0, 'faltas': 0, 'registros': []} for nombre in ALUMNOS_INSCRITOS}
+database.init_db()
 
 HORA_CLASE = time(9, 0, 0)      # Hora de entrada 09:00 AM
 TOLERANCIA_MINUTOS = 15         # Minutos de tolerancia
@@ -24,13 +14,12 @@ RETARDO_MAX_MINUTOS = 30        # Límite para retardo
 
 @app.route('/')
 def vista_laptop():
-    """Dashboard en tiempo real de asistencias del día."""
     return render_template('laptop.html')
 
 @app.route('/lista-general')
 def vista_lista_general():
-    """Nueva vista que muestra la lista general de alumnos y su estatus acumulado."""
-    return render_template('lista_general.html', alumnos=alumnos_db)
+    alumnos_dict = database.obtener_todos_alumnos_dict()
+    return render_template('lista_general.html', alumnos=alumnos_dict)
 
 @app.route('/marcar')
 def vista_telefono():
@@ -39,52 +28,53 @@ def vista_telefono():
 @app.route('/api/asistencia', methods=['POST'])
 def registrar_asistencia():
     data = request.get_json()
-    nombre_ingresado = data.get('nombre', '').strip()
+    cuenta_ingresada = data.get('numero_de_cuenta', '').strip()
     
-    nombre_oficial = None
-    for alumno in ALUMNOS_INSCRITOS:
-        if alumno.lower() == nombre_ingresado.lower():
-            nombre_oficial = alumno
-            break
-
-    if not nombre_oficial:
+    # Validar si el número de cuenta existe en la BD
+    alumno_info = database.buscar_alumno_por_cuenta(cuenta_ingresada)
+    
+    if not alumno_info:
         return jsonify({
             'status': 'error', 
-            'mensaje': 'Nombre no registrado o incorrecto. Verifica tus datos.'
+            'mensaje': 'Número de cuenta no registrado. Verifica tus datos.'
         }), 400
 
+    nombre_oficial = alumno_info['nombre']
+    cuenta = alumno_info['numero_de_cuenta']
+    
     ahora = datetime.now()
     hora_actual_time = ahora.time()
     hora_str = ahora.strftime("%H:%M:%S")
 
-    # Dfinimos asistencia, retardo o falta según la hora de llegada
+    # Definimos asistencia, retardo o falta según la hora de llegada
     minutos_clase = HORA_CLASE.hour * 60 + HORA_CLASE.minute
     minutos_llegada = hora_actual_time.hour * 60 + hora_actual_time.minute
     diff_minutos = minutos_llegada - minutos_clase
 
+    # Asignamos directamente el código de color hexadecimal
     if diff_minutos <= TOLERANCIA_MINUTOS:
         estado = "Asistencia"
-        color = "#34d399"
-        alumnos_db[nombre_oficial]['asistencias'] += 1
+        color = "#34d399"  
     elif diff_minutos <= RETARDO_MAX_MINUTOS:
         estado = "Retardo"
-        color = "#fbbf24"
-        alumnos_db[nombre_oficial]['retardos'] += 1
+        color = "#fbbf24"  
     else:
         estado = "Falta"
-        color = "#f87171"
-        alumnos_db[nombre_oficial]['faltas'] += 1
+        color = "#f87171"  
+
+    ip_cliente = request.remote_addr
+
+    # Registramos en la base
+    database.actualizar_y_registrar(cuenta, estado, color, hora_str, ip_cliente)
 
     nuevo_registro = {
         'nombre': nombre_oficial,
+        'numero_de_cuenta': cuenta,
         'hora': hora_str,
         'estado': estado,
         'color': color,
-        'ip_cliente': request.remote_addr
+        'ip_cliente': ip_cliente
     }
-
-    asistencias.append(nuevo_registro)
-    alumnos_db[nombre_oficial]['registros'].append(nuevo_registro)
 
     socketio.emit('nueva_asistencia', nuevo_registro)
 
@@ -93,21 +83,14 @@ def registrar_asistencia():
         'mensaje': f'¡Registrado como {nombre_oficial}! Estado: {estado}'
     }), 200
 
-@app.route('/api/historial/<nombre>', methods=['GET'])
-def obtener_historial(nombre):
-    nombre_oficial = next((a for a in ALUMNOS_INSCRITOS if a.lower() == nombre.strip().lower()), None)
+@app.route('/api/historial/<cuenta>', methods=['GET'])
+def obtener_historial(cuenta):
+    datos = database.obtener_historial_por_cuenta(cuenta)
     
-    if not nombre_oficial:
+    if not datos:
         return jsonify({'error': 'Alumno no encontrado'}), 404
-        
-    datos = alumnos_db[nombre_oficial]
-    return jsonify({
-        'alumno': nombre_oficial,
-        'asistencias': datos['asistencias'],
-        'retardos': datos['retardos'],
-        'faltas': datos['faltas'],
-        'registros': datos['registros']
-    }), 200
+    
+    return jsonify(datos), 200
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
