@@ -1,16 +1,19 @@
 from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
-from datetime import datetime, time
+from flask_socketio import SocketIO
+from datetime import datetime
 import database
+import sqlite3
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 database.init_db()
 
-HORA_CLASE = time(9, 0, 0)      # Hora de entrada 09:00 AM
-TOLERANCIA_MINUTOS = 15         # Minutos de tolerancia
-RETARDO_MAX_MINUTOS = 30        # Límite para retardo
+TOLERANCIA_MINUTOS = 15 # Puede ser NONE entonces cualquier llegada es asistencia
+
+# -------------------
+# Vistas
+# -------------------
 
 @app.route('/')
 def vista_laptop():
@@ -18,79 +21,268 @@ def vista_laptop():
 
 @app.route('/lista-general')
 def vista_lista_general():
-    alumnos_dict = database.obtener_todos_alumnos_dict()
-    return render_template('lista_general.html', alumnos=alumnos_dict)
+    alumnos = database.obtener_alumnos()
+    return render_template('lista_general.html', alumnos=alumnos)
 
 @app.route('/marcar')
 def vista_telefono():
     return render_template('telefono.html')
 
-@app.route('/api/asistencia', methods=['POST'])
-def registrar_asistencia():
-    data = request.get_json()
-    cuenta_ingresada = data.get('numero_de_cuenta', '').strip()
-    
-    # Validar si el número de cuenta existe en la BD
-    alumno_info = database.buscar_alumno_por_cuenta(cuenta_ingresada)
-    
-    if not alumno_info:
-        return jsonify({
-            'status': 'error', 
-            'mensaje': 'Número de cuenta no registrado. Verifica tus datos.'
+# -------------------
+# Asistencias
+# -------------------
+
+@app.route('/api/sesion/iniciar', methods=['POST'])
+def iniciar_sesion():
+    data = request.get_json(silent=True) or {}
+    id_sesion = data.get('id_sesion')
+
+    if not id_sesion:
+        return jsonify({'status': 'error', 'mensaje': 'No se undic[o la sesion'
         }), 400
 
-    nombre_oficial = alumno_info['nombre']
-    cuenta = alumno_info['numero_de_cuenta']
-    
-    ahora = datetime.now()
-    hora_actual_time = ahora.time()
-    hora_str = ahora.strftime("%H:%M:%S")
+    try:
+        id_sesion = int(id_sesion)
+        resultado = database.iniciar_sesion(id_sesion)
 
-    # Definimos asistencia, retardo o falta según la hora de llegada
-    minutos_clase = HORA_CLASE.hour * 60 + HORA_CLASE.minute
-    minutos_llegada = hora_actual_time.hour * 60 + hora_actual_time.minute
-    diff_minutos = minutos_llegada - minutos_clase
+        if not resultado:
+            return jsonify({
+                'status': 'error', 'mensaje': 'No se pudo iniciar la sesión. Verifica que esté programada y que no exista otra sesión activa.'
+            }), 409
 
-    # Asignamos directamente el código de color hexadecimal
-    if diff_minutos <= TOLERANCIA_MINUTOS:
-        estado = "Asistencia"
-        color = "#34d399"  
-    elif diff_minutos <= RETARDO_MAX_MINUTOS:
-        estado = "Retardo"
-        color = "#fbbf24"  
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'mensaje': 'No se pudo iniciar la sesion'
+        }), 409
+
+    sesion = database.obtener_sesion_activa()
+
+    socketio.emit('sesion_iniciada', sesion)
+
+    return jsonify({
+        'status': 'ok', 'mensaje': 'Sesion iniciada', 'sesion': sesion
+    }), 200
+
+@app.route('/api/sesion/finalizar', methods=['POST'])
+def terminar_sesion():
+    sesion = database.obtener_sesion_activa()
+
+    if not sesion:
+        return jsonify({
+            'status': 'error', 'mensaje': 'No existe sesion activa'
+        }), 409
+
+    resultado = database.finalizar_sesion(sesion['id_sesion'])
+
+    if not resultado:
+        return jsonfy({
+            'status': 'error', 'mensaje': 'No se pudo finalizar la sesion.'
+        }), 409
+
+    socketio.emit('sesion_finalizada', {
+        'id_sesion': sesion['id_sesion']
+    })
+
+    return jsonify({
+        'status': 'ok', 'mensaje': 'Sesion finalizada, los registros pendientes se marcaron como faltas.'
+    }), 200
+
+@app.route('/api/sesion/activa', methods=['GET'])
+def consultar_sesion_activa():
+    sesion = database.obtener_sesion_activa()
+
+    if not sesion:
+        return jsonify({
+            'status': 'error', 'mensaje': 'No existe una sesión activa.'
+        }), 404
+
+    return jsonify(sesion), 200
+
+# -------------------
+# Tolerancia
+# -------------------
+
+@app.route('/api/configuracion/tolerancia', methods=['POST'])
+def modificar_tolerancia():
+    global TOLERANCIA_MINUTOS
+
+    data = request.get_json(silent=True) or {}
+    tolerancia = data.get('tolerancia')
+
+    if tolerancia == 'toda_sesion':
+        TOLERANCIA_MINUTOS = None
     else:
-        estado = "Falta"
-        color = "#f87171"  
+        try:
+            tolerancia = int(tolerancia)
 
-    ip_cliente = request.remote_addr
+            if tolerancia < 0:
+                raise ValueError
 
-    # Registramos en la base
-    database.actualizar_y_registrar(cuenta, estado, color, hora_str, ip_cliente)
+        except (ValueError, TypeError):
+            return jsonify({
+                'status': 'error', 'mensaje': 'La tolerancia debe ser un número de minutos igual o mayor que cero, o toda_sesion.'
+            }), 400
 
+        TOLERANCIA_MINUTOS = tolerancia
+
+    return jsonify({
+        'status': 'ok', 'tolerancia': (
+            'toda_sesion'
+            if TOLERANCIA_MINUTOS is None
+            else TOLERANCIA_MINUTOS
+        )
+    }), 200
+
+# ------------------------
+# Registrar Asistencia
+# ------------------------
+
+@app.route('/api/asistencia', methods=['POST'])
+def registrar_asistencia():
+
+    data = request.get_json(silent=True) or {}
+    cuenta = data.get('numero_de_cuenta', '').strip()
+
+    if not cuenta:
+        return jsonify({
+            'status': 'error', 'mensaje': 'Debes introducir tu número de cuenta.'
+        }), 400
+
+    # Identificar al alumno.
+    alumno = database.buscar_alumno_por_cuenta(cuenta)
+
+    if not alumno or not alumno['activo']:
+        return jsonify({
+            'status': 'error', 'mensaje': 'Número de cuenta no registrado o alumno inactivo.'
+        }), 404
+
+    # Obtener la sesión activa.
+    sesion = database.obtener_sesion_activa()
+
+    if not sesion:
+        return jsonify({
+            'status': 'error', 'mensaje': 'No hay una sesión activa.'
+        }), 409
+
+    # Comprobar que el alumno esté inscrito en esa clase.
+    inscripcion = database.obtener_inscripcion_activa(
+        alumno['id_alumno'], sesion['id_clase']
+    )
+
+    if not inscripcion:
+        return jsonify({
+            'status': 'error', 'mensaje': 'No estas inscrito en esta clase.'
+        }), 403
+
+    # Obtener fecha y hora del servidor.
+    ahora = datetime.now()
+
+    inicio = datetime.fromisoformat(
+        f"{sesion['fecha']} {sesion['hora_inicio']}"
+    )
+
+    fin = datetime.fromisoformat(
+        f"{sesion['fecha']} {sesion['hora_fin']}"
+    )
+
+    # Validar el horario de la sesión.
+    if ahora < inicio:
+        return jsonify({
+            'status': 'error', 'mensaje': 'La sesión todavía no ha comenzado.'
+        }), 409
+
+    if ahora >= fin:
+        return jsonify({
+            'status': 'error', 'mensaje': 'El horario de la sesión ha terminado.'
+        }), 409
+
+    # Determinar asistencia o retardo.
+    if TOLERANCIA_MINUTOS is None:
+        estado = 'asistencia'
+
+    else:
+        minutos_transcurridos = (ahora - inicio).total_seconds() / 60
+
+        if minutos_transcurridos <= TOLERANCIA_MINUTOS:
+            estado = 'asistencia'
+        else:
+            estado = 'retardo'
+
+    hora_registro = ahora.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Pendiente de implementar identificador por UUID.
+    id_dispositivo = None
+
+    try:
+        resultado = database.registrar_asistencia(
+            sesion['id_sesion'],
+            inscripcion['id_inscripcion'],
+            id_dispositivo,
+            hora_registro,
+            estado
+        )
+
+    except sqlite3.Error:
+        app.logger.exception("Error al registrar asistencia.")
+
+        return jsonify({
+            'status': 'error', 'mensaje': 'Ocurrió un error al guardar el registro.'
+        }), 500
+
+    if not resultado:
+        return jsonify({
+            'status': 'error', 'mensaje': 'La asistencia ya fue registrada o no existe un registro pendiente.'
+        }), 409
+
+    # Información para actualizar la interfaz del profesor.
     nuevo_registro = {
-        'nombre': nombre_oficial,
-        'numero_de_cuenta': cuenta,
-        'hora': hora_str,
+        'nombre': alumno['nombre'],
+        'numero_de_cuenta': alumno['numero_de_cuenta'],
+        'hora': hora_registro,
         'estado': estado,
-        'color': color,
-        'ip_cliente': ip_cliente
+        'id_sesion': sesion['id_sesion']
     }
 
     socketio.emit('nueva_asistencia', nuevo_registro)
 
     return jsonify({
-        'status': 'ok',
-        'mensaje': f'¡Registrado como {nombre_oficial}! Estado: {estado}'
+        'status': 'ok', 'mensaje': f"¡Registro realizado! Estado: {estado}.", 'registro': nuevo_registro
     }), 200
+
+# -------------------
+# Solicitar hiostrial
+# -------------------
 
 @app.route('/api/historial/<cuenta>', methods=['GET'])
 def obtener_historial(cuenta):
-    datos = database.obtener_historial_por_cuenta(cuenta)
-    
+
+    sesion = database.obtener_sesion_activa()
+
+    if not sesion:
+        return jsonify({
+            'status': 'error', 'mensaje': 'No existe una sesión activa para consultar el historial.'
+        }), 409
+
+    datos = database.obtener_historial_por_cuenta(
+        cuenta, sesion['id_sesion']
+    )
+
     if not datos:
-        return jsonify({'error': 'Alumno no encontrado'}), 404
-    
+        return jsonify({
+            'status': 'error', 'mensaje': 'Alumno no encontrado.'
+        }), 404
+
     return jsonify(datos), 200
 
+# -------------------
+# Proceso
+# -------------------
+
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(
+        app,
+        host='0.0.0.0',
+        port=5000,
+        debug=True
+    )
+
+

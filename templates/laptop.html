@@ -2,51 +2,698 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard del Profesor - Sistema Distribuido</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard del Profesor</title>
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style_laptop.css') }}">
+
+    <style>
+        .panel-sesion {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .bloque-control {
+            padding: 18px;
+            border-radius: 10px;
+            background: rgba(128, 128, 128, 0.08);
+        }
+
+        .bloque-control h3 {
+            margin-top: 0;
+        }
+
+        .bloque-control input,
+        .bloque-control select {
+            box-sizing: border-box;
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 6px;
+        }
+
+        .acciones {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .acciones button,
+        .btn-general {
+            padding: 11px 18px;
+            border: none;
+            border-radius: 7px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-iniciar {
+            background: #059669;
+        }
+
+        .btn-finalizar {
+            background: #dc2626;
+        }
+
+        .btn-configurar {
+            background: #2563eb;
+        }
+
+        .btn-general {
+            display: inline-block;
+            background: #033b57;
+            text-decoration: none;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .estado-sesion {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 7px;
+            background: rgba(128, 128, 128, 0.08);
+        }
+
+        #mensaje {
+            margin: 15px 0;
+            min-height: 22px;
+        }
+
+        .tabla-vacia {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+
+        .estado-asistencia {
+            color: #34d399;
+            font-weight: bold;
+        }
+
+        .estado-retardo {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        .estado-falta {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        @media (max-width: 600px) {
+            .acciones button {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
+
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+
+<div class="container">
+
+    <!-- ENCABEZADO -->
+
+    <div class="header-dash">
         <div>
-            <h1 class="titulo_principal" style="margin: 0;">Control de Asistencia en Tiempo Real</h1>
-            <p style="margin: 5px 0 0 0;">Estado de la red: <strong>Conectado y escuchando...</strong></p>
+            <h1 class="titulo_principal">
+                Control de Asistencia
+            </h1>
+
+            <p>
+                Estado de la red:
+                <strong id="estado-red">Conectando...</strong>
+            </p>
         </div>
-        <!-- Botón para ir a la lista general de alumnos -->
-        <a href="/lista-general">
-            <button style="padding: 12px 20px; background-color: #033b57; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;">
-                Ver Lista General del Grupo
-            </button>
+
+        <a href="/lista-general" class="btn-general">
+            Lista general de alumnos
         </a>
     </div>
 
-    <div class="table-container"> 
-        <table>
-        <thead>
-            <tr>
-                <th>Alumno</th>
-                <th>Hora</th>
-                <th>Estado</th>
-                <th>IP Cliente</th>
-            </tr>
-        </thead>
-        <tbody id="tabla-asistencia"></tbody>
-    </table>      
+
+    <!-- CONTROLES DE SESIÓN -->
+
+    <div class="panel-sesion">
+
+        <!-- INICIAR SESIÓN -->
+
+        <div class="bloque-control">
+
+            <h3>Iniciar sesión</h3>
+
+            <label for="id-sesion">
+                ID de sesión
+            </label>
+
+            <input
+                type="number"
+                id="id-sesion"
+                min="1"
+                placeholder="Ej. 19"
+            >
+
+            <div class="acciones">
+                <button
+                    id="btn-iniciar"
+                    class="btn-iniciar"
+                    onclick="iniciarSesion()"
+                >
+                    Iniciar sesión
+                </button>
+            </div>
+
+        </div>
+
+
+        <!-- TOLERANCIA -->
+
+        <div class="bloque-control">
+
+            <h3>Configuración de tolerancia</h3>
+
+            <label for="tipo-tolerancia">
+                Modalidad
+            </label>
+
+            <select id="tipo-tolerancia"
+                    onchange="cambiarModalidad()">
+
+                <option value="minutos">
+                    Tolerancia en minutos
+                </option>
+
+                <option value="toda_sesion">
+                    Toda la sesión
+                </option>
+
+            </select>
+
+            <label for="minutos-tolerancia">
+                Minutos permitidos
+            </label>
+
+            <input
+                type="number"
+                id="minutos-tolerancia"
+                min="0"
+                value="15"
+            >
+
+            <div class="acciones">
+                <button
+                    class="btn-configurar"
+                    onclick="configurarTolerancia()"
+                >
+                    Aplicar tolerancia
+                </button>
+            </div>
+
+        </div>
+
+
+        <!-- FINALIZAR SESIÓN -->
+
+        <div class="bloque-control">
+
+            <h3>Finalizar sesión</h3>
+
+            <p>
+                Al finalizar, todos los registros pendientes
+                se convertirán en faltas.
+            </p>
+
+            <div class="acciones">
+                <button
+                    id="btn-finalizar"
+                    class="btn-finalizar"
+                    onclick="finalizarSesion()"
+                    disabled
+                >
+                    Finalizar sesión
+                </button>
+            </div>
+
+        </div>
+
     </div>
 
-    <script>
-        const socket = io();
-        socket.on('nueva_asistencia', function(r) {
-            const tbody = document.getElementById('tabla-asistencia');
-            const fila = document.createElement('tr');
-            fila.innerHTML = `
-                <td><strong>${r.nombre}</strong></td>
-                <td>${r.hora}</td>
-                <td><b style="color: ${r.color}">${r.estado}</b></td>
-                <td>${r.ip_cliente}</td>
-            `;
-            tbody.prepend(fila);
-        });
-    </script>
+
+    <!-- INFORMACIÓN DE LA SESIÓN -->
+
+    <div class="estado-sesion">
+
+        <h3>Sesión actual</h3>
+
+        <p id="informacion-sesion">
+            No hay una sesión activa.
+        </p>
+
+    </div>
+
+
+    <!-- MENSAJES -->
+
+    <div id="mensaje" role="status" aria-live="polite"></div>
+
+
+    <!-- TABLA DE ASISTENCIA -->
+
+    <div class="table-container">
+
+        <h2>Asistencia en tiempo real</h2>
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>No. de cuenta</th>
+                    <th>Alumno</th>
+                    <th>Hora de registro</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+
+            <tbody id="tabla-asistencia">
+
+                <tr>
+                    <td colspan="4" class="tabla-vacia">
+                        No hay registros cargados.
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // ------------------------
+    // ESTADO DE LA INTERFAZ
+    // ------------------------
+
+    const socket = io();
+
+    let sesionActual = null;
+
+
+    // ------------------
+    // ELEMENTOS
+    // ------------------
+
+    const tabla = document.getElementById('tabla-asistencia');
+    const informacionSesion = document.getElementById('informacion-sesion');
+    const mensaje = document.getElementById('mensaje');
+
+    const btnIniciar = document.getElementById('btn-iniciar');
+    const btnFinalizar = document.getElementById('btn-finalizar');
+
+
+    // ----------------
+    // MENSAJES
+    // ----------------
+
+    function mostrarMensaje(texto, error = false) {
+
+        mensaje.textContent = texto;
+
+        mensaje.style.color = error
+            ? '#f87171'
+            : '#34d399';
+
+    }
+
+
+    // -----------------
+    // PETICIONES HTTP
+    // -----------------
+
+    async function solicitar(url, opciones = {}) {
+
+        const respuesta = await fetch(url, opciones);
+
+        const datos = await respuesta.json().catch(() => ({}));
+
+        if (!respuesta.ok) {
+
+            throw new Error(datos.mensaje || `Error HTTP ${respuesta.status}`);
+
+        }
+
+        return datos;
+
+    }
+
+
+
+    // ---------
+    // TABLA
+    // ---------
+
+    function limpiarTabla() {
+
+        tabla.replaceChildren();
+
+    }
+
+
+    function agregarRegistro(registro) {
+
+        if (sesionActual && registro.id_sesion !== undefined && registro.id_sesion !== sesionActual.id_sesion) {
+            return;
+        }
+
+        // Evitar que se repita el mismo alumno.
+        const cuenta = String(registro.numero_de_cuenta);
+
+        const existente = [...tabla.querySelectorAll('tr')]
+            .find(fila => fila.dataset.cuenta === cuenta);
+
+        if (existente) {
+            existente.remove();
+        }
+
+        const fila = document.createElement('tr');
+        fila.dataset.cuenta = cuenta;
+
+        const celdaCuenta = document.createElement('td');
+        celdaCuenta.textContent = cuenta;
+
+        const celdaNombre = document.createElement('td');
+        celdaNombre.textContent = registro.nombre;
+
+        const celdaHora = document.createElement('td');
+        celdaHora.textContent = registro.hora;
+
+        const celdaEstado = document.createElement('td');
+
+        const estado = document.createElement('strong');
+
+        estado.textContent = registro.estado;
+
+        const claseEstado = `estado-${registro.estado.toLowerCase()}`;
+
+        estado.classList.add(claseEstado);
+
+        celdaEstado.appendChild(estado);
+
+        fila.append(celdaCuenta, celdaNombre, celdaHora, celdaEstado);
+
+        tabla.prepend(fila);
+
+    }
+
+
+    // -------------------
+    // MOSTRAR SESIÓN
+    // -------------------
+
+    function actualizarInterfazSesion(sesion) {
+
+        sesionActual = sesion;
+
+        if (!sesion) {
+
+            informacionSesion.textContent = 'No hay una sesión activa.';
+
+            btnIniciar.disabled = false;
+            btnFinalizar.disabled = true;
+
+            return;
+
+        }
+
+        informacionSesion.textContent =
+            `Clase: ${sesion.clase} | ` +
+            `Sesión: ${sesion.id_sesion} | ` +
+            `Fecha: ${sesion.fecha} | ` +
+            `Horario: ${sesion.hora_inicio} - ${sesion.hora_fin}`;
+
+        btnIniciar.disabled = true;
+        btnFinalizar.disabled = false;
+
+    }
+
+
+    // ------------------------
+    // CONSULTAR SESIÓN ACTIVA
+    // ------------------------
+
+    async function consultarSesionActiva() {
+
+        try {
+
+            const sesion = await solicitar('/api/sesion/activa');
+
+            actualizarInterfazSesion(sesion);
+
+            mostrarMensaje('Sesión activa recuperada.');
+
+        } catch (error) {
+
+            actualizarInterfazSesion(null);
+
+        }
+
+    }
+
+
+    // ----------------
+    // INICIAR SESIÓN
+    // ----------------
+
+    async function iniciarSesion() {
+
+        const idSesion = document.getElementById('id-sesion').value;
+
+        if (!idSesion || Number(idSesion) <= 0) {
+
+            mostrarMensaje('Introduce un ID de sesión válido.', true);
+            return;
+
+        }
+
+        try {
+
+            const datos = await solicitar('/api/sesion/iniciar', {
+
+                method: 'POST',
+
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+
+                body: JSON.stringify({
+                    id_sesion: idSesion
+                })
+
+            });
+
+            actualizarInterfazSesion(datos.sesion);
+
+            limpiarTabla();
+
+            mostrarMensaje(datos.mensaje);
+
+        } catch (error) {
+
+            mostrarMensaje(error.message, true);
+
+        }
+
+    }
+
+
+    // -------------------
+    // FINALIZAR SESIÓN
+    // -------------------
+
+    async function finalizarSesion() {
+
+        if (!sesionActual) {
+
+            mostrarMensaje('No hay una sesión activa.', true);
+            return;
+
+        }
+
+        const confirmar = confirm(
+            '¿Deseas finalizar la sesión? Los registros pendientes se convertirán en faltas.'
+        );
+
+        if (!confirmar) {
+            return;
+        }
+
+        try {
+
+            const datos = await solicitar('/api/sesion/finalizar', {
+
+                method: 'POST'
+
+            });
+
+            mostrarMensaje(datos.mensaje);
+
+            actualizarInterfazSesion(null);
+
+        } catch (error) {
+
+            mostrarMensaje(error.message, true);
+
+        }
+
+    }
+
+
+    // -------------------------
+    // CONFIGURAR TOLERANCIA
+    // -------------------------
+
+    function cambiarModalidad() {
+
+        const modalidad =
+            document.getElementById('tipo-tolerancia').value;
+
+        const minutos =
+            document.getElementById('minutos-tolerancia');
+
+        minutos.disabled = modalidad === 'toda_sesion';
+
+    }
+
+
+    async function configurarTolerancia() {
+
+        const modalidad =
+            document.getElementById('tipo-tolerancia').value;
+
+        let tolerancia;
+
+        if (modalidad === 'toda_sesion') {
+
+            tolerancia = 'toda_sesion';
+
+        } else {
+
+            tolerancia = document.getElementById(
+                'minutos-tolerancia'
+            ).value;
+
+            if (tolerancia === '' || Number(tolerancia) < 0) {
+
+                mostrarMensaje(
+                    'Introduce una tolerancia válida.',
+                    true
+                );
+
+                return;
+
+            }
+
+        }
+
+        try {
+
+            const datos = await solicitar(
+                '/api/configuracion/tolerancia',
+                {
+
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+
+                    body: JSON.stringify({
+                        tolerancia: tolerancia
+                    })
+
+                }
+            );
+
+            mostrarMensaje('Tolerancia actualizada correctamente.');
+
+        } catch (error) {
+
+            mostrarMensaje(error.message, true);
+
+        }
+
+    }
+
+
+    // -----------------
+    // SOCKET.IO
+    // ----------------
+
+    socket.on('connect', function() {
+
+        document.getElementById('estado-red').textContent =
+            'Conectado y escuchando';
+
+    });
+
+
+    socket.on('disconnect', function() {
+
+        document.getElementById('estado-red').textContent =
+            'Desconectado';
+
+    });
+
+
+    socket.on('nueva_asistencia', function(registro) {
+
+        agregarRegistro(registro);
+
+    });
+
+
+    socket.on('sesion_iniciada', function(sesion) {
+
+        actualizarInterfazSesion(sesion);
+
+        limpiarTabla();
+
+        mostrarMensaje('Nueva sesión iniciada.');
+
+    });
+
+
+    socket.on('sesion_finalizada', function() {
+
+        actualizarInterfazSesion(null);
+
+        mostrarMensaje('La sesión ha finalizado.');
+
+    });
+
+
+    // ----------------
+    // INICIALIZACIÓN
+    // ----------------
+
+    consultarSesionActiva();
+
+    cambiarModalidad();
+
+</script>
+
 </body>
 </html>
