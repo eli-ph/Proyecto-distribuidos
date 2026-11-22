@@ -22,6 +22,12 @@
     </div>
 
     <script>
+        // Al escribir de nuevo, se borran los mensajes de la consulta anterior.
+        document.getElementById('numCuenta').addEventListener('input', function () {
+            document.getElementById('respuesta').innerText = '';
+            document.getElementById('estatusAlumno').innerHTML = '';
+        });
+
         async function marcarLlegada() {
             const cuenta = document.getElementById('numCuenta').value;
             const divRespuesta = document.getElementById('respuesta');
@@ -80,6 +86,7 @@
                 divEstatus.innerText = "No se pudo cargar el historial.";
             }
         }
+        
     </script>
 </body>
 </html>
