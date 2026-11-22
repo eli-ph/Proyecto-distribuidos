@@ -110,3 +110,7 @@ input:focus {
     border: 1px solid var(--border-color);
     font-size: 0.85rem;
 }
+/* Oculta el recuadro del historial mientras no tenga contenido. */
+#estatusAlumno:empty {
+    display: none;
+}
