@@ -146,30 +146,27 @@
 
     <div class="panel-sesion">
 
-        <!-- INICIAR SESIÓN -->
+        <!-- INICIAR SESIÓN EN TIEMPO REAL -->
 
         <div class="bloque-control">
 
-            <h3>Iniciar sesión</h3>
+            <h3>Iniciar clase</h3>
 
-            <label for="id-sesion">
-                ID de sesión
+            <label for="select-materia">
+                Materia / Clase
             </label>
 
-            <input
-                type="number"
-                id="id-sesion"
-                min="1"
-                placeholder="Ej. 19"
-            >
+            <select id="select-materia" class="input-control">
+                <option value="">Cargando materias...</option>
+            </select>
 
             <div class="acciones">
                 <button
                     id="btn-iniciar"
                     class="btn-iniciar"
-                    onclick="iniciarSesion()"
+                    onclick="iniciarSesionTiempoReal()"
                 >
-                    Iniciar sesión
+                    Iniciar clase ahora
                 </button>
             </div>
 
@@ -477,48 +474,54 @@
     // INICIAR SESIÓN
     // ----------------
 
-    async function iniciarSesion() {
+    async function cargarMateriasSelect() {
+        try {
+            const res = await fetch('/api/clases/activas');
+            const clases = await res.json();
+            const select = document.getElementById('select-materia');
 
-        const idSesion = document.getElementById('id-sesion').value;
+            select.innerHTML = '<option value="">-- Selecciona una clase --</option>';
+            clases.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id_clase;
+                opt.textContent = c.nombre;
+                select.appendChild(opt);
+            });
+        } catch (err) {
+            console.error("Error al cargar las materias:", err);
+        }
+    }
 
-        if (!idSesion || Number(idSesion) <= 0) {
+    // Enviar la petición de inicio al hacer clic en el botón
+    async function iniciarSesionTiempoReal() {
+        const idClase = document.getElementById('select-materia').value;
 
-            mostrarMensaje('Introduce un ID de sesión válido.', true);
+        if (!idClase) {
+            alert("Por favor selecciona una materia.");
             return;
-
         }
 
         try {
-
-            const datos = await solicitar('/api/sesion/iniciar', {
-
+            const res = await fetch('/api/sesion/iniciar-tiempo-real', {
                 method: 'POST',
-
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-
-                body: JSON.stringify({
-                    id_sesion: idSesion
-                })
-
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_clase: idClase })
             });
 
-            actualizarInterfazSesion(datos.sesion);
+            const data = await res.json();
 
-            limpiarTabla();
-
-            mostrarMensaje(datos.mensaje);
-
-        } catch (error) {
-
-            mostrarMensaje(error.message, true);
-
+            if (res.ok) {
+                window.location.reload(); // Recargar para mostrar el bloque de 'Sesión actual'
+            } else {
+                alert(`Error: ${data.mensaje}`);
+            }
+        } catch (err) {
+            alert("Error al conectar con el servidor.");
         }
-
     }
 
-
+    document.addEventListener('DOMContentLoaded', cargarMateriasSelect);
+    
     // -------------------
     // FINALIZAR SESIÓN
     // -------------------

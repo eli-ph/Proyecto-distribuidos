@@ -138,7 +138,6 @@ def modificar_tolerancia():
 
 @app.route('/api/asistencia', methods=['POST'])
 def registrar_asistencia():
-
     data = request.get_json(silent=True) or {}
     cuenta = data.get('numero_de_cuenta', '').strip()
 
@@ -147,71 +146,62 @@ def registrar_asistencia():
             'status': 'error', 'mensaje': 'Debes introducir tu número de cuenta.'
         }), 400
 
-    # Identificar al alumno.
+    # 1. Identificar al alumno
     alumno = database.buscar_alumno_por_cuenta(cuenta)
-
     if not alumno or not alumno['activo']:
         return jsonify({
             'status': 'error', 'mensaje': 'Número de cuenta no registrado o alumno inactivo.'
         }), 404
 
-    # Obtener la sesión activa.
+    # 2. Obtener la sesión activa
     sesion = database.obtener_sesion_activa()
-
     if not sesion:
         return jsonify({
             'status': 'error', 'mensaje': 'No hay una sesión activa.'
         }), 409
 
-    # Comprobar que el alumno esté inscrito en esa clase.
+    # 3. Comprobar que el alumno esté inscrito en esa clase
     inscripcion = database.obtener_inscripcion_activa(
         alumno['id_alumno'], sesion['id_clase']
     )
-
     if not inscripcion:
         return jsonify({
-            'status': 'error', 'mensaje': 'No estas inscrito en esta clase.'
+            'status': 'error', 'mensaje': 'No estás inscrito en esta clase.'
         }), 403
 
-    # Obtener fecha y hora del servidor.
+    # 4. Validaciones de horario
     ahora = datetime.now()
 
-    inicio = datetime.fromisoformat(
-        f"{sesion['fecha']} {sesion['hora_inicio']}"
-    )
+    # Validar hora de inicio (si la sesión la define)
+    if sesion.get('hora_inicio'):
+        inicio = datetime.fromisoformat(f"{sesion['fecha']} {sesion['hora_inicio']}")
+        if ahora < inicio:
+            return jsonify({
+                'status': 'error', 'mensaje': 'La sesión todavía no ha comenzado.'
+            }), 409
 
-    fin = datetime.fromisoformat(
-        f"{sesion['fecha']} {sesion['hora_fin']}"
-    )
+    # Validar hora de fin SOLO si la sesión tiene hora de fin programada
+    if sesion.get('hora_fin'):
+        fin = datetime.fromisoformat(f"{sesion['fecha']} {sesion['hora_fin']}")
+        if ahora >= fin:
+            return jsonify({
+                'status': 'error', 'mensaje': 'El horario de la sesión ha terminado.'
+            }), 409
 
-    # Validar el horario de la sesión.
-    if ahora < inicio:
-        return jsonify({
-            'status': 'error', 'mensaje': 'La sesión todavía no ha comenzado.'
-        }), 409
-
-    if ahora >= fin:
-        return jsonify({
-            'status': 'error', 'mensaje': 'El horario de la sesión ha terminado.'
-        }), 409
-
-    # Determinar asistencia o retardo.
-    if TOLERANCIA_MINUTOS is None:
+    # 5. Determinar asistencia o retardo
+    if TOLERANCIA_MINUTOS is None or not sesion.get('hora_inicio'):
         estado = 'asistencia'
-
     else:
         minutos_transcurridos = (ahora - inicio).total_seconds() / 60
-
         if minutos_transcurridos <= TOLERANCIA_MINUTOS:
             estado = 'asistencia'
         else:
             estado = 'retardo'
 
     hora_registro = ahora.strftime("%Y-%m-%d %H:%M:%S")
+    id_dispositivo = None  # Pendiente de implementar identificador por UUID
 
-    # Pendiente de implementar identificador por UUID.
-    id_dispositivo = None
-
+    # 6. Guardar registro en la base de datos
     try:
         resultado = database.registrar_asistencia(
             sesion['id_sesion'],
@@ -220,10 +210,8 @@ def registrar_asistencia():
             hora_registro,
             estado
         )
-
     except sqlite3.Error:
         app.logger.exception("Error al registrar asistencia.")
-
         return jsonify({
             'status': 'error', 'mensaje': 'Ocurrió un error al guardar el registro.'
         }), 500
@@ -233,7 +221,7 @@ def registrar_asistencia():
             'status': 'error', 'mensaje': 'La asistencia ya fue registrada o no existe un registro pendiente.'
         }), 409
 
-    # Información para actualizar la interfaz del profesor.
+    # 7. Notificar a la interfaz del profesor por WebSockets
     nuevo_registro = {
         'nombre': alumno['nombre'],
         'numero_de_cuenta': alumno['numero_de_cuenta'],
@@ -245,7 +233,9 @@ def registrar_asistencia():
     socketio.emit('nueva_asistencia', nuevo_registro)
 
     return jsonify({
-        'status': 'ok', 'mensaje': f"¡Registro realizado! Estado: {estado}.", 'registro': nuevo_registro
+        'status': 'ok',
+        'mensaje': f"¡Registro realizado! Estado: {estado}.",
+        'registro': nuevo_registro
     }), 200
 
 # -------------------
@@ -272,6 +262,36 @@ def obtener_historial(cuenta):
         }), 404
 
     return jsonify(datos), 200
+
+# -------------------
+# Iniciar Sesion
+# -------------------
+
+@app.route('/api/clases/activas', methods=['GET'])
+def api_obtener_clases():
+    clases = database.obtener_clases_activas()
+    return jsonify(clases), 200
+
+@app.route('/api/sesion/iniciar-tiempo-real', methods=['POST'])
+def api_iniciar_sesion_tiempo_real():
+    data = request.get_json(silent=True) or {}
+    id_clase = data.get('id_clase')
+
+    if not id_clase:
+        return jsonify({'status': 'error', 'mensaje': 'Selecciona una clase.'}), 400
+
+    id_sesion = database.iniciar_sesion_tiempo_real(int(id_clase))
+
+    if not id_sesion:
+        return jsonify({
+            'status': 'error',
+            'mensaje': 'Ya existe una sesión activa o no se pudo crear.'
+        }), 409
+
+    sesion = database.obtener_sesion_activa()
+    socketio.emit('sesion_iniciada', sesion)
+
+    return jsonify({'status': 'ok', 'sesion': sesion}), 200
 
 # -------------------
 # Proceso

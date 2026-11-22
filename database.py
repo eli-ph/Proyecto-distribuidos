@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 # Busca el archivo en la direccion exacta donde se encuentra el .py  que contiene esta linea
 DB_NAME = Path(__file__).resolve().parent / "registros.db" 
@@ -324,6 +325,7 @@ def obtener_sesion_activa():
 
 def finalizar_sesion(id_sesion):
     """Finaliza una sesión y convierte pendientes en faltas."""
+    hora_fin_actual = datetime.now().strftime("%H:%M")
 
     with conectar() as conn:
 
@@ -343,8 +345,8 @@ def finalizar_sesion(id_sesion):
 
         # Cambiar el estado de la sesión.
         conn.execute("""
-            UPDATE sesiones SET estado = 'finalizada' WHERE id_sesion = ?""", (id_sesion,)
-        )
+            UPDATE sesiones SET estado = 'finalizada', hora_fin = ? WHERE id_sesion = ?
+        """, (hora_fin_actual, id_sesion))
 
         return True
 
@@ -357,3 +359,63 @@ def obtener_inscripcion_activa(id_alumno, id_clase):
         ).fetchone()
 
         return dict(fila) if fila else None
+
+
+def obtener_clases_activas():
+    """Obtiene las materias disponibles para iniciar clase."""
+    with conectar() as conn:
+        filas = conn.execute("""
+            SELECT id_clase, nombre, descripcion FROM clases WHERE activo = 1 Order BY nombre
+        """).fetchall()
+        return [dict(f) for f in filas]
+
+def iniciar_sesion_tiempo_real(id_clase):
+    """Crea una nueva sesión en tiempo real y la activa"""
+    ahora = datetime.now()
+    fecha = ahora.strftime("%Y-%m-%d")
+    hora_inicio = ahora.strftime("%H:%M")
+
+    with conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+
+        # Verificar que la sesion no exista
+        otra = conn.execute("""
+            SELECT id_sesion FROM sesiones WHERE estado = 'activa' LIMIT 1
+        """).fetchone()
+
+        if otra:
+            return None
+
+        cursor = conn.execute("""
+            INSERT INTO sesiones (id_clase, fecha, hora_inicio, hora_fin, estado) VALUES (?, ?, ?, NULL, 'activa')
+        """, (id_clase, fecha, hora_inicio))
+
+        id_sesion = cursor.lastrowid
+
+        # Marcar como pendiente a todos los alumnos inscritos
+        conn.execute("""
+            INSERT INTO registros (id_sesion, id_inscripcion, estado) SELECT ?, i.id_inscripcion, 'pendiente' FROM inscripciones AS i JOIN alumnos AS a ON i.id_alumno = a.id_alumno WHERE i.id_clase = ? AND i.activo = 1 AND a.activo = 1
+        """, (id_sesion, id_clase))
+
+        return id_sesion
+
+def finalizar_sesion_activa(id_sesion):
+    """Finaliza la sesion activa y actualiza hora_fin con la hora de cierre"""
+    """Cambia estado a 'finalizada' y convierte 'pendiente' en 'falta'"""
+
+    hora_fin = datatime.now().strftime("%H:%M")
+
+    with conectar() as conn:
+        conn.execute("BEGING IMMEDIATE")
+
+        # Cambiar 'pendiente' a 'falta'
+        conn.execute("""
+            UPDATE registros SET estado = 'falta' WHERE id_sesion = ? AND estado = 'pendiente'
+        """, (id_sesion,))
+
+        # Cerrar la sesión hora_fin se actualiza y estado pasa a 'finalizada'
+        cursor = conn.execute("""
+            UPDATE sesiones SET estado = 'finalizada', hora_fin = ? WHERE id_sesion = ? AND estado = 'activa'
+        """, (hora_fin, id_sesion))
+
+        return cursor.rowcount > 0
