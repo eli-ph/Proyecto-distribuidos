@@ -58,6 +58,13 @@
             }
         }
 
+        // Evita que un nombre con caracteres especiales rompa el HTML.
+        function escaparHTML(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto;
+            return div.innerHTML;
+        }
+
         async function consultarHistorial() {
             const cuenta = document.getElementById('numCuenta').value;
             const divEstatus = document.getElementById('estatusAlumno');
@@ -68,25 +75,41 @@
             }
 
             try {
-                const res = await fetch(`/api/historial/${encodeURIComponent(cuenta)}`);
+                const res = await fetch(`/api/historial/${encodeURIComponent(cuenta.trim())}`);
                 const data = await res.json();
 
-                if(res.ok) {
-                    divEstatus.innerHTML = `
-                        <p style="margin: 0 0 8px 0;"><b>Alumno:</b> ${data.alumno}</p>
-                        <p style="margin: 0 0 8px 0;"><b>Cuenta:</b> ${data.numero_de_cuenta}</p>
-                        <p style="margin: 4px 0;">Asistencias: <span style="color: #34d399; font-weight: bold;">${data.asistencias}</span></p>
-                        <p style="margin: 4px 0;">Retardos: <span style="color: #fbbf24; font-weight: bold;">${data.retardos}</span></p>
-                        <p style="margin: 4px 0;">Faltas: <span style="color: #f87171; font-weight: bold;">${data.faltas}</span></p>
-                    `;
-                } else {
-                    divEstatus.innerText = "Número de cuenta no encontrado.";
+                if (!res.ok) {
+                    divEstatus.innerText = data.mensaje || "No se pudo cargar el historial.";
+                    return;
                 }
+
+                let html = `
+                    <p style="margin: 0 0 8px 0;"><b>Alumno:</b> ${escaparHTML(data.alumno.nombre)}</p>
+                    <p style="margin: 0 0 8px 0;"><b>Cuenta:</b> ${escaparHTML(data.alumno.numero_de_cuenta)}</p>
+                `;
+
+                if (data.clases.length === 0) {
+                    html += `<p style="margin: 8px 0 0 0;">No estás inscrito en ninguna clase.</p>`;
+                }
+
+                // Un bloque por cada clase del alumno.
+                for (const clase of data.clases) {
+                    const r = clase.resumen;
+                    html += `
+                        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 12px 0;">
+                        <p style="margin: 0 0 6px 0;"><b>${escaparHTML(clase.clase)}</b></p>
+                        <p style="margin: 4px 0;">Asistencias: <span style="color: #34d399; font-weight: bold;">${r.asistencias}</span></p>
+                        <p style="margin: 4px 0;">Retardos: <span style="color: #fbbf24; font-weight: bold;">${r.retardos}</span></p>
+                        <p style="margin: 4px 0;">Faltas: <span style="color: #f87171; font-weight: bold;">${r.faltas}</span></p>
+                        <p style="margin: 4px 0;">Porcentaje de asistencia: <b>${r.porcentaje} %</b></p>
+                    `;
+                }
+
+                divEstatus.innerHTML = html;
             } catch (err) {
                 divEstatus.innerText = "No se pudo cargar el historial.";
             }
         }
-        
     </script>
 </body>
 </html>

@@ -160,6 +160,25 @@
                 <option value="">Cargando materias...</option>
             </select>
 
+            <label for="tipo-cierre">
+                Cierre automático
+            </label>
+
+            <select id="tipo-cierre" onchange="cambiarModalidadCierre()">
+                <option value="hora">
+                    Cerrar a una hora límite
+                </option>
+                <option value="sin_cierre">
+                    Sin cierre automático
+                </option>
+            </select>
+
+            <label for="hora-cierre">
+                Hora límite
+            </label>
+
+            <input type="time" id="hora-cierre">
+
             <div class="acciones">
                 <button
                     id="btn-iniciar"
@@ -420,9 +439,30 @@
     // MOSTRAR SESIÓN
     // -------------------
 
+    // Temporizador que revisa la sesión cuando llega su hora límite.
+    let temporizadorCierre = null;
+
+    function programarRevisionCierre(sesion) {
+
+        clearTimeout(temporizadorCierre);
+
+        if (!sesion || !sesion.hora_fin) {
+            return;
+        }
+
+        const cierre = new Date(`${sesion.fecha}T${sesion.hora_fin}`);
+        const espera = cierre - new Date() + 2000;
+
+        // Al llegar la hora, el servidor cierra la sesión y avisa por Socket.IO.
+        temporizadorCierre = setTimeout(consultarSesionActiva, Math.max(espera, 0));
+
+    }
+
     function actualizarInterfazSesion(sesion) {
 
         sesionActual = sesion;
+
+        programarRevisionCierre(sesion);
 
         if (!sesion) {
 
@@ -439,7 +479,10 @@
             `Clase: ${sesion.clase} | ` +
             `Sesión: ${sesion.id_sesion} | ` +
             `Fecha: ${sesion.fecha} | ` +
-            `Horario: ${sesion.hora_inicio} - ${sesion.hora_fin}`;
+            `Inicio: ${sesion.hora_inicio} | ` +
+            (sesion.hora_fin
+                ? `Hora límite: ${sesion.hora_fin}`
+                : 'Sin cierre automático');
 
         btnIniciar.disabled = true;
         btnFinalizar.disabled = false;
@@ -501,11 +544,24 @@
             return;
         }
 
+        let horaCierre = null;
+
+        if (document.getElementById('tipo-cierre').value === 'hora') {
+
+            horaCierre = document.getElementById('hora-cierre').value;
+
+            if (!horaCierre) {
+                alert("Indica la hora límite o elige 'Sin cierre automático'.");
+                return;
+            }
+
+        }
+
         try {
             const res = await fetch('/api/sesion/iniciar-tiempo-real', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id_clase: idClase })
+                body: JSON.stringify({ id_clase: idClase, hora_cierre: horaCierre })
             });
 
             const data = await res.json();
@@ -560,6 +616,31 @@
             mostrarMensaje(error.message, true);
 
         }
+
+    }
+
+
+    // -------------------------
+    // CIERRE AUTOMÁTICO
+    // -------------------------
+
+    function cambiarModalidadCierre() {
+
+        const modalidad = document.getElementById('tipo-cierre').value;
+
+        document.getElementById('hora-cierre').disabled = modalidad === 'sin_cierre';
+
+    }
+
+    // Propone como cierre la hora actual más 2 horas.
+    function proponerHoraCierre() {
+
+        const propuesta = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+        const horas = String(propuesta.getHours()).padStart(2, '0');
+        const minutos = String(propuesta.getMinutes()).padStart(2, '0');
+
+        document.getElementById('hora-cierre').value = `${horas}:${minutos}`;
 
     }
 
@@ -679,11 +760,15 @@
     });
 
 
-    socket.on('sesion_finalizada', function() {
+    socket.on('sesion_finalizada', function(datos) {
 
         actualizarInterfazSesion(null);
 
-        mostrarMensaje('La sesión ha finalizado.');
+        mostrarMensaje(
+            datos && datos.automatica
+                ? 'La sesión se cerró automáticamente al llegar su hora límite.'
+                : 'La sesión ha finalizado.'
+        );
 
     });
 
@@ -695,6 +780,10 @@
     consultarSesionActiva();
 
     cambiarModalidad();
+
+    proponerHoraCierre();
+
+    cambiarModalidadCierre();
 
 </script>
 

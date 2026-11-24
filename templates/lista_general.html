@@ -2,18 +2,64 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Lista General de Asistencia - Grupo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista General de Asistencia</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
+    <style>
+        .filtro-clase {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .filtro-clase select {
+            padding: 10px;
+            border-radius: 6px;
+            min-width: 240px;
+        }
+
+        .centrado {
+            text-align: center;
+        }
+
+        .tabla-vacia {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <div class="header-dash">
             <div>
                 <h1 class="titulo_principal">Lista General de Alumnos</h1>
-                <p class="subtext">Historial acumulado por Número de Cuenta</p>
+                <p class="subtext">
+                    {% if clase %}
+                        {{ clase.nombre }} · {{ sesiones }} sesión(es) finalizada(s)
+                    {% else %}
+                        Historial acumulado por clase
+                    {% endif %}
+                </p>
             </div>
             <a href="/" class="btn-secondary">Volver a tabla en tiempo real</a>
         </div>
+
+        {% if clases %}
+        <!-- Al cambiar la clase se recarga la página con ?clase=ID -->
+        <form class="filtro-clase" method="get" action="/lista-general">
+            <label for="clase">Clase:</label>
+            <select id="clase" name="clase" onchange="this.form.submit()">
+                {% for c in clases %}
+                <option value="{{ c.id_clase }}" {% if clase and c.id_clase == clase.id_clase %}selected{% endif %}>
+                    {{ c.nombre }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
 
         <div class="table-container">
             <table>
@@ -21,19 +67,31 @@
                     <tr>
                         <th>No. de Cuenta</th>
                         <th>Nombre del Alumno</th>
-                        <th style="text-align: center;">Asistencias</th>
-                        <th style="text-align: center;">Retardos</th>
-                        <th style="text-align: center;">Faltas</th>
+                        <th class="centrado">Asistencias</th>
+                        <th class="centrado">Retardos</th>
+                        <th class="centrado">Faltas</th>
+                        <th class="centrado">% Asistencia</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for cuenta, datos in alumnos.items() %}
+                    {% for alumno in alumnos %}
                     <tr>
-                        <td><code>{{ cuenta }}</code></td>
-                        <td><strong>{{ datos.nombre }}</strong></td>
-                        <td style="text-align: center; color: #34d399; font-weight: bold;">{{ datos.asistencias }}</td>
-                        <td style="text-align: center; color: #fbbf24; font-weight: bold;">{{ datos.retardos }}</td>
-                        <td style="text-align: center; color: #f87171; font-weight: bold;">{{ datos.faltas }}</td>
+                        <td><code>{{ alumno.numero_de_cuenta }}</code></td>
+                        <td><strong>{{ alumno.nombre }}</strong></td>
+                        <td class="centrado" style="color: #34d399; font-weight: bold;">{{ alumno.asistencias }}</td>
+                        <td class="centrado" style="color: #fbbf24; font-weight: bold;">{{ alumno.retardos }}</td>
+                        <td class="centrado" style="color: #f87171; font-weight: bold;">{{ alumno.faltas }}</td>
+                        <td class="centrado">{{ alumno.porcentaje }} %</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="tabla-vacia">
+                            {% if clases %}
+                                No hay alumnos inscritos en esta clase.
+                            {% else %}
+                                No hay clases registradas.
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
