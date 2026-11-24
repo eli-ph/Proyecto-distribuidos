@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Busca el archivo en la direccion exacta donde se encuentra el .py  que contiene esta linea
 DB_NAME = Path(__file__).resolve().parent / "registros.db" 
@@ -45,7 +45,7 @@ def init_db():
 
 def crear_alumno(numero_de_cuenta, nombre): 
     '''Permite registrar a un alumno nuevo.'''
-    with connectar() as conn:
+    with conectar() as conn:
         cursor = conn.execute("""
             INSERT INTO alumnos (numero_de_cuenta, nombre) VALUES (?, ?)""", (numero_de_cuenta.strip(), nombre.strip())
         )
@@ -58,14 +58,14 @@ def obtener_alumnos(solo_activos=False):
     if solo_activos:
         consulta += " Where activo = 1"
 
-    consulta += "Order by numero_de_cuenta"
+    consulta += " ORDER BY numero_de_cuenta"
 
     with conectar() as conn:
         filas = conn.execute(consulta).fetchall()
         return [dict(fila) for fila in filas]
 
 def buscar_alumno_por_cuenta(cuenta):
-    with connectar() as conn:
+    with conectar() as conn:
         fila = conn.execute("""
             SELECT id_alumno, numero_de_cuenta, nombre, activo FROM alumnos WHERE numero_de_cuenta = ?""", (cuenta.strip(),)
         ).fetchone()
@@ -73,7 +73,7 @@ def buscar_alumno_por_cuenta(cuenta):
         return dict(fila) if fila else None
 
 def buscar_alumno_por_id(id_alumno):
-    with connectar() as conn:
+    with conectar() as conn:
         fila = conn.execute("""
             SELECT id_alumno, numero_de_cuenta, nombre, activo FROM alumnos WHERE id_alumno = ?""", (id_alumno,)
         ).fetchone()
@@ -89,7 +89,7 @@ def actualizar_alumno(id_alumno, numero_de_cuenta, nombre):
         return cursor.rowcount > 0
 
 def cambiar_estado_alumno(id_alumno, activo):
-    with connectar() as conn:
+    with conectar() as conn:
         cursor = conn.execute("""
             UPDATE alumnos SET activo = ? WHERE id_alumno = ?""", (int(activo), id_alumno)
         )
@@ -112,9 +112,9 @@ def obtener_clases(solo_activas=False):
     consulta = """SELECT id_clase, nombre, descripcion, activo FROM clases"""
 
     if solo_activas:
-        consulta += "WHERE activo = 1"
+        consulta += " WHERE activo = 1"
 
-    consulta += "ORDER BY nombre"
+    consulta += " ORDER BY nombre"
 
     with conectar() as conn:
         filas = conn.execute(consulta).fetchall()
@@ -210,16 +210,6 @@ def cambiar_estado_inscripcion(id_inscripcion, activo):
 
         return cursor.rowcount > 0
 
-def buscar_alumno_por_cuenta(cuenta_ingresada):
-    """buscamos alumno por su número de cuenta."""
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM alumnos WHERE numero_de_cuenta = ?', (cuenta_ingresada.strip(),))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
-
 def registrar_asistencia(id_sesion, id_inscripcion, id_dispositivo, fecha_hora, estado):
     """Actualiza el registro de asistencia de un alumno."""
 
@@ -240,43 +230,114 @@ def registrar_asistencia(id_sesion, id_inscripcion, id_dispositivo, fecha_hora, 
 
         return cursor.rowcount > 0
 
-def obtener_historial_por_cuenta(cuenta, id_sesion):
-        retardos = resumen["retardos"]
-        faltas = resumen["faltas"]
+# --------------------
+# Historial y lista general
+# --------------------
 
-        total = asistencias + retardos + faltas
+# Columnas que cuentan asistencias, retardos y faltas (los pendientes no cuentan).
+# Las consultas que las usan ignoran registros de sesiones que ya no existen.
+CONTEO_ESTADOS = """
+    COALESCE(SUM(r.estado = 'asistencia'), 0) AS asistencias,
+    COALESCE(SUM(r.estado = 'retardo'), 0) AS retardos,
+    COALESCE(SUM(r.estado = 'falta'), 0) AS faltas
+"""
 
-        porcentaje = (
-            asistencias / total * 100
-            if total else 0
-        )
+def calcular_porcentaje(asistencias, retardos, faltas):
+    """Porcentaje de asistencias sobre el total de sesiones registradas."""
+    total = asistencias + retardos + faltas
+    return round(asistencias / total * 100, 2) if total else 0
 
-        # Registros detallados.
-        registros = conn.execute("""
-            SELECT s.fecha, s.hora_inicio, s.hora_fin, r.fecha_hora, r.estado FROM registros AS r JOIN inscripciones AS i ON r.id_inscripcion = i.id_inscripcion JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE i.id_alumno = ? AND s.id_clase = ? ORDER BY s.fecha DESC, s.hora_inicio DESC""", (id_alumno, id_clase)
+def obtener_historial_por_cuenta(cuenta):
+    """
+    Obtiene el historial de un alumno en todas las clases donde está inscrito.
+
+    No necesita una sesión activa.
+    """
+
+    with conectar() as conn:
+
+        alumno = conn.execute("""
+            SELECT id_alumno, numero_de_cuenta, nombre FROM alumnos WHERE numero_de_cuenta = ?""", (cuenta.strip(),)
+        ).fetchone()
+
+        if not alumno:
+            return None
+
+        # Resumen por cada clase del alumno.
+        clases = conn.execute(f"""
+            SELECT i.id_inscripcion, c.id_clase, c.nombre AS clase, {CONTEO_ESTADOS} FROM inscripciones AS i JOIN clases AS c ON i.id_clase = c.id_clase LEFT JOIN registros AS r ON r.id_inscripcion = i.id_inscripcion AND r.id_sesion IN (SELECT id_sesion FROM sesiones) WHERE i.id_alumno = ? GROUP BY i.id_inscripcion ORDER BY c.nombre""", (alumno["id_alumno"],)
         ).fetchall()
 
-        # Actividad agrupada por fecha.
-        actividad = conn.execute("""
-            SELECT s.fecha, r.estado, COUNT(*) AS cantidad FROM registros AS r JOIN inscripciones AS i ON r.id_inscripcion = i.id_inscripcion JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE i.id_alumno = ? AND s.id_clase = ? GROUP BY s.fecha, r.estado ORDER BY s.fecha""", (id_alumno, id_clase)
-        ).fetchall()
+        historial = []
+
+        for clase in clases:
+
+            # Registros detallados de la clase.
+            registros = conn.execute("""
+                SELECT s.fecha, s.hora_inicio, s.hora_fin, r.fecha_hora, r.estado FROM registros AS r JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE r.id_inscripcion = ? AND r.estado != 'pendiente' ORDER BY s.fecha DESC, s.hora_inicio DESC""", (clase["id_inscripcion"],)
+            ).fetchall()
+
+            # Actividad agrupada por fecha.
+            actividad = conn.execute("""
+                SELECT s.fecha, r.estado, COUNT(*) AS cantidad FROM registros AS r JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE r.id_inscripcion = ? AND r.estado != 'pendiente' GROUP BY s.fecha, r.estado ORDER BY s.fecha""", (clase["id_inscripcion"],)
+            ).fetchall()
+
+            historial.append({
+                "id_clase": clase["id_clase"],
+                "clase": clase["clase"],
+                "resumen": {
+                    "asistencias": clase["asistencias"],
+                    "retardos": clase["retardos"],
+                    "faltas": clase["faltas"],
+                    "porcentaje": calcular_porcentaje(
+                        clase["asistencias"], clase["retardos"], clase["faltas"]
+                    )
+                },
+                "registros": [dict(r) for r in registros],
+                "actividad": [dict(a) for a in actividad]
+            })
 
         return {
             "alumno": {
-                "id_alumno": id_alumno,
+                "id_alumno": alumno["id_alumno"],
                 "numero_de_cuenta": alumno["numero_de_cuenta"],
-                "nombre": alumno["nombre"],
-                "clase": alumno["clase"]
+                "nombre": alumno["nombre"]
             },
-            "resumen": {
-                "asistencias": asistencias,
-                "retardos": retardos,
-                "faltas": faltas,
-                "porcentaje": round(porcentaje, 2)
-            },
-            "registros": [dict(r) for r in registros],
-            "actividad": [dict(a) for a in actividad]
+            "clases": historial
         }
+
+def obtener_lista_general(id_clase):
+    """Resumen de asistencias, retardos y faltas de cada alumno inscrito en una clase."""
+
+    with conectar() as conn:
+        filas = conn.execute(f"""
+            SELECT a.numero_de_cuenta, a.nombre, {CONTEO_ESTADOS} FROM inscripciones AS i JOIN alumnos AS a ON i.id_alumno = a.id_alumno LEFT JOIN registros AS r ON r.id_inscripcion = i.id_inscripcion AND r.id_sesion IN (SELECT id_sesion FROM sesiones) WHERE i.id_clase = ? AND i.activo = 1 GROUP BY i.id_inscripcion ORDER BY a.numero_de_cuenta""", (id_clase,)
+        ).fetchall()
+
+    lista = []
+
+    for fila in filas:
+        alumno = dict(fila)
+        alumno["porcentaje"] = calcular_porcentaje(
+            alumno["asistencias"], alumno["retardos"], alumno["faltas"]
+        )
+        lista.append(alumno)
+
+    return lista
+
+def contar_sesiones_finalizadas(id_clase):
+    """Número de sesiones ya finalizadas de una clase."""
+
+    with conectar() as conn:
+        fila = conn.execute("""
+            SELECT COUNT(*) AS total FROM sesiones WHERE id_clase = ? AND estado = 'finalizada'""", (id_clase,)
+        ).fetchone()
+
+        return fila["total"]
+
+# --------------------
+# Sesiones
+# --------------------
 
 def iniciar_sesion(id_sesion):
     """Activa una sesión y asigna pendiente a cada allumno."""
@@ -369,8 +430,13 @@ def obtener_clases_activas():
         """).fetchall()
         return [dict(f) for f in filas]
 
-def iniciar_sesion_tiempo_real(id_clase):
-    """Crea una nueva sesión en tiempo real y la activa"""
+def iniciar_sesion_tiempo_real(id_clase, hora_cierre=None):
+    """
+    Crea una nueva sesión en tiempo real y la activa.
+
+    hora_cierre ("HH:MM") es la hora límite: si el profesor no finaliza
+    la sesión, se cierra sola a esa hora. Si es None, no hay cierre automático.
+    """
     ahora = datetime.now()
     fecha = ahora.strftime("%Y-%m-%d")
     hora_inicio = ahora.strftime("%H:%M")
@@ -387,8 +453,8 @@ def iniciar_sesion_tiempo_real(id_clase):
             return None
 
         cursor = conn.execute("""
-            INSERT INTO sesiones (id_clase, fecha, hora_inicio, hora_fin, estado) VALUES (?, ?, ?, NULL, 'activa')
-        """, (id_clase, fecha, hora_inicio))
+            INSERT INTO sesiones (id_clase, fecha, hora_inicio, hora_fin, estado) VALUES (?, ?, ?, ?, 'activa')
+        """, (id_clase, fecha, hora_inicio, hora_cierre))
 
         id_sesion = cursor.lastrowid
 
@@ -399,23 +465,36 @@ def iniciar_sesion_tiempo_real(id_clase):
 
         return id_sesion
 
-def finalizar_sesion_activa(id_sesion):
-    """Finaliza la sesion activa y actualiza hora_fin con la hora de cierre"""
-    """Cambia estado a 'finalizada' y convierte 'pendiente' en 'falta'"""
+def cerrar_sesion_vencida():
+    """
+    Si la sesión activa ya pasó su hora límite, la finaliza:
+    los pendientes pasan a falta y se conserva la hora límite como hora de fin.
 
-    hora_fin = datatime.now().strftime("%H:%M")
+    Devuelve el id de la sesión cerrada, o None si no se cerró ninguna.
+    """
+    ahora = datetime.now()
 
     with conectar() as conn:
-        conn.execute("BEGING IMMEDIATE")
+        conn.execute("BEGIN IMMEDIATE")
 
-        # Cambiar 'pendiente' a 'falta'
+        sesion = conn.execute("""
+            SELECT id_sesion, fecha, hora_fin FROM sesiones WHERE estado = 'activa' LIMIT 1
+        """).fetchone()
+
+        if not sesion or not sesion["hora_fin"]:
+            return None
+
+        cierre = datetime.fromisoformat(f"{sesion['fecha']} {sesion['hora_fin']}")
+
+        if ahora < cierre:
+            return None
+
         conn.execute("""
             UPDATE registros SET estado = 'falta' WHERE id_sesion = ? AND estado = 'pendiente'
-        """, (id_sesion,))
+        """, (sesion["id_sesion"],))
 
-        # Cerrar la sesión hora_fin se actualiza y estado pasa a 'finalizada'
-        cursor = conn.execute("""
-            UPDATE sesiones SET estado = 'finalizada', hora_fin = ? WHERE id_sesion = ? AND estado = 'activa'
-        """, (hora_fin, id_sesion))
+        conn.execute("""
+            UPDATE sesiones SET estado = 'finalizada' WHERE id_sesion = ?
+        """, (sesion["id_sesion"],))
 
-        return cursor.rowcount > 0
+        return sesion["id_sesion"]

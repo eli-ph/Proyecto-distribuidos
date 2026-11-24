@@ -12,6 +12,24 @@ database.init_db()
 TOLERANCIA_MINUTOS = 15 # Puede ser NONE entonces cualquier llegada es asistencia
 
 # -------------------
+# Sesión vigente
+# -------------------
+
+def obtener_sesion_vigente():
+    """
+    Devuelve la sesión activa, pero antes la cierra si ya pasó su hora
+    límite y avisa al dashboard del profesor.
+    """
+    cerrada = database.cerrar_sesion_vencida()
+
+    if cerrada:
+        socketio.emit('sesion_finalizada', {
+            'id_sesion': cerrada, 'automatica': True
+        })
+
+    return database.obtener_sesion_activa()
+
+# -------------------
 # Vistas
 # -------------------
 
@@ -21,8 +39,25 @@ def vista_laptop():
 
 @app.route('/lista-general')
 def vista_lista_general():
-    alumnos = database.obtener_alumnos()
-    return render_template('lista_general.html', alumnos=alumnos)
+    clases = database.obtener_clases(solo_activas=True)
+
+    # La clase se elige con ?clase=ID; si no se indica o no existe, se usa la primera.
+    id_clase = request.args.get('clase', type=int)
+    clase = next((c for c in clases if c['id_clase'] == id_clase), None)
+
+    if clase is None and clases:
+        clase = clases[0]
+
+    alumnos = database.obtener_lista_general(clase['id_clase']) if clase else []
+    sesiones = database.contar_sesiones_finalizadas(clase['id_clase']) if clase else 0
+
+    return render_template(
+        'lista_general.html',
+        clases=clases,
+        clase=clase,
+        alumnos=alumnos,
+        sesiones=sesiones
+    )
 
 @app.route('/marcar')
 def vista_telefono():
@@ -38,7 +73,7 @@ def iniciar_sesion():
     id_sesion = data.get('id_sesion')
 
     if not id_sesion:
-        return jsonify({'status': 'error', 'mensaje': 'No se undic[o la sesion'
+        return jsonify({'status': 'error', 'mensaje': 'No se indicó la sesión.'
         }), 400
 
     try:
@@ -64,7 +99,7 @@ def iniciar_sesion():
 
 @app.route('/api/sesion/finalizar', methods=['POST'])
 def terminar_sesion():
-    sesion = database.obtener_sesion_activa()
+    sesion = obtener_sesion_vigente()
 
     if not sesion:
         return jsonify({
@@ -74,7 +109,7 @@ def terminar_sesion():
     resultado = database.finalizar_sesion(sesion['id_sesion'])
 
     if not resultado:
-        return jsonfy({
+        return jsonify({
             'status': 'error', 'mensaje': 'No se pudo finalizar la sesion.'
         }), 409
 
@@ -88,7 +123,7 @@ def terminar_sesion():
 
 @app.route('/api/sesion/activa', methods=['GET'])
 def consultar_sesion_activa():
-    sesion = database.obtener_sesion_activa()
+    sesion = obtener_sesion_vigente()
 
     if not sesion:
         return jsonify({
@@ -154,10 +189,16 @@ def registrar_asistencia():
         }), 404
 
     # 2. Obtener la sesión activa
-    sesion = database.obtener_sesion_activa()
+    sesion = obtener_sesion_vigente()
     if not sesion:
         return jsonify({
             'status': 'error', 'mensaje': 'No hay una sesión activa.'
+        }), 409
+
+    # Rechazar si la sesión activa quedó abierta de otro día (el profesor olvidó finalizarla)
+    if sesion['fecha'] != datetime.now().strftime("%Y-%m-%d"):
+        return jsonify({
+            'status': 'error', 'mensaje': 'La sesión activa es de otro día. El profesor debe finalizarla.'
         }), 409
 
     # 3. Comprobar que el alumno esté inscrito en esa clase
@@ -239,26 +280,17 @@ def registrar_asistencia():
     }), 200
 
 # -------------------
-# Solicitar hiostrial
+# Solicitar historial
 # -------------------
 
 @app.route('/api/historial/<cuenta>', methods=['GET'])
 def obtener_historial(cuenta):
 
-    sesion = database.obtener_sesion_activa()
-
-    if not sesion:
-        return jsonify({
-            'status': 'error', 'mensaje': 'No existe una sesión activa para consultar el historial.'
-        }), 409
-
-    datos = database.obtener_historial_por_cuenta(
-        cuenta, sesion['id_sesion']
-    )
+    datos = database.obtener_historial_por_cuenta(cuenta)
 
     if not datos:
         return jsonify({
-            'status': 'error', 'mensaje': 'Alumno no encontrado.'
+            'status': 'error', 'mensaje': 'Número de cuenta no registrado.'
         }), 404
 
     return jsonify(datos), 200
@@ -280,7 +312,24 @@ def api_iniciar_sesion_tiempo_real():
     if not id_clase:
         return jsonify({'status': 'error', 'mensaje': 'Selecciona una clase.'}), 400
 
-    id_sesion = database.iniciar_sesion_tiempo_real(int(id_clase))
+    # Hora límite ("HH:MM"); vacío o None = sin cierre automático.
+    hora_cierre = data.get('hora_cierre') or None
+
+    if hora_cierre:
+        try:
+            cierre = datetime.strptime(hora_cierre, "%H:%M").time()
+        except (ValueError, TypeError):
+            return jsonify({'status': 'error', 'mensaje': 'La hora límite no es válida.'}), 400
+
+        if cierre <= datetime.now().time():
+            return jsonify({
+                'status': 'error', 'mensaje': 'La hora límite debe ser posterior a la hora actual.'
+            }), 400
+
+    # Si la sesión anterior ya pasó su hora límite, se cierra antes de crear la nueva.
+    obtener_sesion_vigente()
+
+    id_sesion = database.iniciar_sesion_tiempo_real(int(id_clase), hora_cierre)
 
     if not id_sesion:
         return jsonify({
