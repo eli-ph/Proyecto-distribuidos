@@ -29,6 +29,9 @@
             padding: 20px;
             opacity: 0.7;
         }
+        .link-perfil{
+            color: blanchedalmond;
+        }
     </style>
 </head>
 <body>
@@ -77,7 +80,12 @@
                     {% for alumno in alumnos %}
                     <tr>
                         <td><code>{{ alumno.numero_de_cuenta }}</code></td>
-                        <td><strong>{{ alumno.nombre }}</strong></td>
+                        <td>
+                            <!-- Enlace al perfil individual -->
+                            <a href="/alumno/{{ alumno.numero_de_cuenta }}" class="link-perfil">
+                                {{ alumno.nombre }}
+                            </a>
+                        </td>
                         <td class="centrado" style="color: #34d399; font-weight: bold;">{{ alumno.asistencias }}</td>
                         <td class="centrado" style="color: #fbbf24; font-weight: bold;">{{ alumno.retardos }}</td>
                         <td class="centrado" style="color: #f87171; font-weight: bold;">{{ alumno.faltas }}</td>

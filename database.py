@@ -88,11 +88,27 @@ def actualizar_alumno(id_alumno, numero_de_cuenta, nombre):
 
         return cursor.rowcount > 0
 
-def cambiar_estado_alumno(id_alumno, activo):
+def cambiar_estado_alumno(id_alumno, activo): # Maneja alta (1) y baja (0) 
+    """Activa (1) o da de baja (0) a un alumno en el sistema."""
+    estado_activo = int(bool(activo))
+
     with conectar() as conn:
         cursor = conn.execute("""
-            UPDATE alumnos SET activo = ? WHERE id_alumno = ?""", (int(activo), id_alumno)
+            UPDATE alumnos SET activo = ? WHERE id_alumno = ?""", (estado_activo, id_alumno)
         )
+
+        # Si se da de baja al alumno, limpia registros pendientes en sesiones activas
+        if estado_activo == 0:
+            conn.execute("""
+                DELETE FROM registros
+                WHERE estado = 'pendiente'
+                  AND id_inscripcion IN (
+                      SELECT id_inscripcion FROM inscripciones WHERE id_alumno = ?
+                  )
+                  AND id_sesion IN (
+                      SELECT id_sesion FROM sesiones WHERE estado = 'activa'
+                  )
+            """, (id_alumno,))
 
         return cursor.rowcount > 0
 
@@ -200,13 +216,25 @@ def obtener_inscripciones(id_clase=None, solo_activas=False):
         filas = conn.execute(consulta, parametros).fetchall()
         return [dict(fila) for fila in filas]
 
-def cambiar_estado_inscripcion(id_inscripcion, activo):
-    """Activa o desactiva una inscripción."""
+def cambiar_estado_inscripcion(id_inscripcion, activo): #  Maneja alta (1) y baja (0) de inscripción 
+    """Activa (1) o da de baja (0) una inscripción en una clase."""
+    estado_activo = int(bool(activo))
 
     with conectar() as conn:
         cursor = conn.execute("""
-            UPDATE inscripciones SET activo = ? WHERE id_inscripcion = ?""", (int(activo), id_inscripcion)
+            UPDATE inscripciones SET activo = ? WHERE id_inscripcion = ?""", (estado_activo, id_inscripcion)
         )
+
+        # Si se da de baja la inscripción, limpia registros pendientes en sesiones activas
+        if estado_activo == 0:
+            conn.execute("""
+                DELETE FROM registros
+                WHERE estado = 'pendiente'
+                  AND id_inscripcion = ?
+                  AND id_sesion IN (
+                      SELECT id_sesion FROM sesiones WHERE estado = 'activa'
+                  )
+            """, (id_inscripcion,))
 
         return cursor.rowcount > 0
 
@@ -230,6 +258,22 @@ def registrar_asistencia(id_sesion, id_inscripcion, id_dispositivo, fecha_hora, 
 
         return cursor.rowcount > 0
 
+ESTADOS_VALIDOS = {"pendiente", "asistencia", "retardo", "falta"}
+def actualizar_estado_registro(id_registro, nuevo_estado, fecha_hora=None): # <-- NUEVO
+    """Modifica el estado (asistencia, retardo, falta, pendiente) de un registro específico."""
+    estado_limpio = nuevo_estado.strip().lower()
+    if estado_limpio not in ESTADOS_VALIDOS:
+        raise ValueError(f"Estado no válido: {nuevo_estado}")
+
+    with conectar() as conn:
+        cursor = conn.execute("""
+            UPDATE registros
+            SET estado = ?, fecha_hora = COALESCE(?, fecha_hora)
+            WHERE id_registro = ?
+        """, (estado_limpio, fecha_hora, id_registro))
+
+        return cursor.rowcount > 0
+
 # --------------------
 # Historial y lista general
 # --------------------
@@ -250,20 +294,15 @@ def calcular_porcentaje(asistencias, retardos, faltas):
 def obtener_historial_por_cuenta(cuenta):
     """
     Obtiene el historial de un alumno en todas las clases donde está inscrito.
-
-    No necesita una sesión activa.
     """
-
     with conectar() as conn:
-
         alumno = conn.execute("""
-            SELECT id_alumno, numero_de_cuenta, nombre FROM alumnos WHERE numero_de_cuenta = ?""", (cuenta.strip(),)
+            SELECT id_alumno, numero_de_cuenta, nombre, activo FROM alumnos WHERE numero_de_cuenta = ?""", (cuenta.strip(),) #  incluye activo
         ).fetchone()
 
         if not alumno:
             return None
 
-        # Resumen por cada clase del alumno.
         clases = conn.execute(f"""
             SELECT i.id_inscripcion, c.id_clase, c.nombre AS clase, {CONTEO_ESTADOS} FROM inscripciones AS i JOIN clases AS c ON i.id_clase = c.id_clase LEFT JOIN registros AS r ON r.id_inscripcion = i.id_inscripcion AND r.id_sesion IN (SELECT id_sesion FROM sesiones) WHERE i.id_alumno = ? GROUP BY i.id_inscripcion ORDER BY c.nombre""", (alumno["id_alumno"],)
         ).fetchall()
@@ -271,18 +310,16 @@ def obtener_historial_por_cuenta(cuenta):
         historial = []
 
         for clase in clases:
-
-            # Registros detallados de la clase.
             registros = conn.execute("""
-                SELECT s.fecha, s.hora_inicio, s.hora_fin, r.fecha_hora, r.estado FROM registros AS r JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE r.id_inscripcion = ? AND r.estado != 'pendiente' ORDER BY s.fecha DESC, s.hora_inicio DESC""", (clase["id_inscripcion"],)
+                SELECT r.id_registro, s.fecha, s.hora_inicio, s.hora_fin, r.fecha_hora, r.estado FROM registros AS r JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE r.id_inscripcion = ? AND r.estado != 'pendiente' ORDER BY s.fecha DESC, s.hora_inicio DESC""", (clase["id_inscripcion"],) # <-- MODIFICADO: incluye r.id_registro
             ).fetchall()
 
-            # Actividad agrupada por fecha.
             actividad = conn.execute("""
                 SELECT s.fecha, r.estado, COUNT(*) AS cantidad FROM registros AS r JOIN sesiones AS s ON r.id_sesion = s.id_sesion WHERE r.id_inscripcion = ? AND r.estado != 'pendiente' GROUP BY s.fecha, r.estado ORDER BY s.fecha""", (clase["id_inscripcion"],)
             ).fetchall()
 
             historial.append({
+                "id_inscripcion": clase["id_inscripcion"], # <-- MODIFICADO: expone id_inscripcion
                 "id_clase": clase["id_clase"],
                 "clase": clase["clase"],
                 "resumen": {
@@ -301,17 +338,23 @@ def obtener_historial_por_cuenta(cuenta):
             "alumno": {
                 "id_alumno": alumno["id_alumno"],
                 "numero_de_cuenta": alumno["numero_de_cuenta"],
-                "nombre": alumno["nombre"]
+                "nombre": alumno["nombre"],
+                "activo": alumno["activo"] # <-- MODIFICADO: expone activo
             },
             "clases": historial
         }
 
 def obtener_lista_general(id_clase):
     """Resumen de asistencias, retardos y faltas de cada alumno inscrito en una clase."""
-
     with conectar() as conn:
         filas = conn.execute(f"""
-            SELECT a.numero_de_cuenta, a.nombre, {CONTEO_ESTADOS} FROM inscripciones AS i JOIN alumnos AS a ON i.id_alumno = a.id_alumno LEFT JOIN registros AS r ON r.id_inscripcion = i.id_inscripcion AND r.id_sesion IN (SELECT id_sesion FROM sesiones) WHERE i.id_clase = ? AND i.activo = 1 GROUP BY i.id_inscripcion ORDER BY a.numero_de_cuenta""", (id_clase,)
+            SELECT a.id_alumno, i.id_inscripcion, a.numero_de_cuenta, a.nombre, {CONTEO_ESTADOS}
+            FROM inscripciones AS i
+            JOIN alumnos AS a ON i.id_alumno = a.id_alumno
+            LEFT JOIN registros AS r ON r.id_inscripcion = i.id_inscripcion AND r.id_sesion IN (SELECT id_sesion FROM sesiones)
+            WHERE i.id_clase = ? AND i.activo = 1 AND a.activo = 1
+            GROUP BY i.id_inscripcion
+            ORDER BY a.numero_de_cuenta""", (id_clase,) # incluye id_alumno, id_inscripcion y filtra a.activo = 1
         ).fetchall()
 
     lista = []

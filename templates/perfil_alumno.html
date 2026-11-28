@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perfil del Alumno</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_perfil.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header-perfil">
+            <div>
+                <h1 id="nombre-alumno">Cargando perfil...</h1>
+                <p id="info-alumno" class="subtext">No. de cuenta: {{ cuenta }}</p>
+            </div>
+            <a href="/lista-general" class="btn-volver">← Volver a Lista General</a>
+        </div>
+
+        <div id="mensaje" class="mensaje" role="status"></div>
+
+        <!-- Acciones administrativas generales del alumno -->
+        <div class="tarjeta-admin">
+            <div>
+                <strong>Estado en el sistema:</strong>
+                <span id="badge-estado" class="badge">Cargando...</span>
+            </div>
+            <button id="btn-baja-general" class="btn-peligro" onclick="cambiarEstadoAlumno(0)">
+                Dar de baja del sistema
+            </button>
+        </div>
+
+        <!-- Contenedor dinámico con sus clases e historial -->
+        <div id="contenedor-clases"></div>
+    </div>
+
+    <script>
+        const CUENTA = "{{ cuenta }}";
+        let alumnoActual = null;
+
+        function mostrarMensaje(texto, esError = false) {
+            const el = document.getElementById('mensaje');
+            el.textContent = texto;
+            el.className = esError ? 'mensaje error' : 'mensaje ok';
+        }
+
+        async function cargarPerfil() {
+            const res = await fetch(`/api/historial/${encodeURIComponent(CUENTA)}`);
+            const data = await res.json();
+
+            if (!res.ok) {
+                mostrarMensaje(data.mensaje || 'Error al cargar el perfil.', true);
+                return;
+            }
+
+            alumnoActual = data.alumno;
+            document.getElementById('nombre-alumno').textContent = alumnoActual.nombre;
+            document.getElementById('info-alumno').textContent = `No. de cuenta: ${alumnoActual.numero_de_cuenta}`;
+
+            const badge = document.getElementById('badge-estado');
+            const btnBaja = document.getElementById('btn-baja-general');
+
+            if (alumnoActual.activo) {
+                badge.textContent = 'Activo';
+                badge.className = 'badge activo';
+                btnBaja.textContent = 'Dar de baja del sistema';
+                btnBaja.className = 'btn-peligro';
+                btnBaja.onclick = () => cambiarEstadoAlumno(0);
+            } else {
+                badge.textContent = 'Dado de baja';
+                badge.className = 'badge inactivo';
+                btnBaja.textContent = 'Reactivar alumno';
+                btnBaja.className = 'btn-primario';
+                btnBaja.onclick = () => cambiarEstadoAlumno(1);
+            }
+
+            renderizarClases(data.clases);
+        }
+
+        function renderizarClases(clases) {
+            const contenedor = document.getElementById('contenedor-clases');
+            contenedor.innerHTML = '';
+
+            if (!clases.length) {
+                contenedor.innerHTML = '<p class="vacio">Este alumno no tiene clases registradas.</p>';
+                return;
+            }
+
+            clases.forEach(c => {
+                const tarjeta = document.createElement('div');
+                tarjeta.className = 'tarjeta-clase';
+
+                let filasHtml = '';
+                if (!c.registros.length) {
+                    filasHtml = `<tr><td colspan="3" class="vacio">Sin registros finalizados aún.</td></tr>`;
+                } else {
+                    c.registros.forEach(r => {
+                        filasHtml += `
+                            <tr>
+                                <td>${r.fecha}</td>
+                                <td>${(r.fecha_hora ? r.fecha_hora.split(' ').pop() : (r.hora_inicio || '-')).slice(0, 5)}</td>
+                                <td>
+                                    <select class="select-estado" onchange="modificarRegistro(${r.id_registro}, this.value)">
+                                        <option value="asistencia" ${r.estado === 'asistencia' ? 'selected' : ''}>Asistencia</option>
+                                        <option value="retardo" ${r.estado === 'retardo' ? 'selected' : ''}>Retardo</option>
+                                        <option value="falta" ${r.estado === 'falta' ? 'selected' : ''}>Falta</option>
+                                        <option value="pendiente" ${r.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                tarjeta.innerHTML = `
+                    <div class="clase-header">
+                        <div>
+                            <h2>${c.clase}</h2>
+                            <p class="resumen">
+                                <span class="txt-verde">Asistencias: ${c.resumen.asistencias}</span> ·
+                                <span class="txt-amarillo">Retardos: ${c.resumen.retardos}</span> ·
+                                <span class="txt-rojo">Faltas: ${c.resumen.faltas}</span> ·
+                                <strong>${c.resumen.porcentaje}%</strong>
+                            </p>
+                        </div>
+                        <button class="btn-peligro-outline" onclick="darDeBajaClase(${c.id_inscripcion}, '${c.clase}')">
+                            Dar de baja de esta clase
+                        </button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Hora de registro</th>
+                                <th>Estado (editable)</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filasHtml}</tbody>
+                    </table>
+                `;
+                contenedor.appendChild(tarjeta);
+            });
+        }
+
+        async function modificarRegistro(idRegistro, nuevoEstado) {
+            const res = await fetch(`/api/registros/${idRegistro}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ estado: nuevoEstado })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                mostrarMensaje(data.mensaje || 'No se pudo actualizar el registro.', true);
+                return;
+            }
+            mostrarMensaje('Asistencia actualizada correctamente.');
+            cargarPerfil();
+        }
+
+        async function darDeBajaClase(idInscripcion, nombreClase) {
+            if (!confirm(`¿Seguro que deseas dar de baja al alumno de "${nombreClase}"?`)) return;
+
+            const res = await fetch(`/api/inscripciones/${idInscripcion}/estado`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activo: 0 })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                mostrarMensaje(data.mensaje || 'No se pudo dar de baja de la clase.', true);
+                return;
+            }
+            mostrarMensaje(`Alumno dado de baja de ${nombreClase}.`);
+            cargarPerfil();
+        }
+
+        async function cambiarEstadoAlumno(nuevoEstado) {
+            const accion = nuevoEstado === 0 ? 'dar de baja del sistema' : 'reactivar';
+            if (!confirm(`¿Confirmas que deseas ${accion} a ${alumnoActual.nombre}?`)) return;
+
+            const res = await fetch(`/api/alumnos/${alumnoActual.id_alumno}/estado`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activo: nuevoEstado })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                mostrarMensaje(data.mensaje || 'Error al actualizar estado.', true);
+                return;
+            }
+            mostrarMensaje(nuevoEstado === 0 ? 'Alumno dado de baja del sistema.' : 'Alumno reactivado.');
+            cargarPerfil();
+        }
+
+        cargarPerfil();
+    </script>
+</body>
+</html>

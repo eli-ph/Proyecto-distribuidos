@@ -59,6 +59,13 @@ def vista_lista_general():
         sesiones=sesiones
     )
 
+@app.route('/alumno/<cuenta>')
+def vista_perfil_alumno(cuenta):
+    datos = database.obtener_historial_por_cuenta(cuenta)
+    if not datos:
+        return "Alumno no encontrado", 404
+    return render_template('perfil_alumno.html', cuenta=cuenta)
+
 @app.route('/marcar')
 def vista_telefono():
     return render_template('telefono.html')
@@ -294,6 +301,58 @@ def obtener_historial(cuenta):
         }), 404
 
     return jsonify(datos), 200
+
+# Modificar estado de un registro específico
+
+@app.route('/api/registros/<int:id_registro>', methods=['PATCH'])
+def actualizar_registro(id_registro):
+    data = request.get_json(silent=True) or {}
+    nuevo_estado = data.get('estado', '').strip().lower()
+
+    try:
+        ok = database.actualizar_estado_registro(id_registro, nuevo_estado)
+    except ValueError as e:
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 400
+
+    if not ok:
+        return jsonify({'status': 'error', 'mensaje': 'Registro no encontrado.'}), 404
+
+    socketio.emit('registro_actualizado', {'id_registro': id_registro, 'estado': nuevo_estado})
+    return jsonify({'status': 'ok', 'mensaje': 'Registro actualizado.'}), 200
+
+# Cambiar estado (alta/baja) de un alumno a nivel general
+
+@app.route('/api/alumnos/<int:id_alumno>/estado', methods=['POST'])
+def cambiar_estado_alumno_api(id_alumno):
+    data = request.get_json(silent=True) or {}
+    if 'activo' not in data:
+        return jsonify({'status': 'error', 'mensaje': 'Falta el campo activo.'}), 400
+
+    activo = int(bool(data['activo']))
+    ok = database.cambiar_estado_alumno(id_alumno, activo)
+
+    if not ok:
+        return jsonify({'status': 'error', 'mensaje': 'Alumno no encontrado.'}), 404
+
+    socketio.emit('alumno_estado_actualizado', {'id_alumno': id_alumno, 'activo': activo})
+    return jsonify({'status': 'ok', 'mensaje': 'Estado del alumno actualizado.'}), 200
+
+# Cambiar estado (alta/baja) de la inscripción de un alumno en una clase
+
+@app.route('/api/inscripciones/<int:id_inscripcion>/estado', methods=['POST'])
+def cambiar_estado_inscripcion_api(id_inscripcion):
+    data = request.get_json(silent=True) or {}
+    if 'activo' not in data:
+        return jsonify({'status': 'error', 'mensaje': 'Falta el campo activo.'}), 400
+
+    activo = int(bool(data['activo']))
+    ok = database.cambiar_estado_inscripcion(id_inscripcion, activo)
+
+    if not ok:
+        return jsonify({'status': 'error', 'mensaje': 'Inscripción no encontrada.'}), 404
+
+    socketio.emit('inscripcion_actualizada', {'id_inscripcion': id_inscripcion, 'activo': activo})
+    return jsonify({'status': 'ok', 'mensaje': 'Inscripción actualizada.'}), 200
 
 # -------------------
 # Iniciar Sesion
