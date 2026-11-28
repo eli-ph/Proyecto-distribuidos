@@ -368,6 +368,27 @@ def obtener_lista_general(id_clase):
 
     return lista
 
+# Historial / resumen de sesiones para una clase
+def obtener_historial_sesiones_clase(id_clase):
+    """Devuelve cada sesión de una clase con el conteo de asistencias, retardos y faltas."""
+    with conectar() as conn:
+        filas = conn.execute(f"""
+            SELECT
+                s.id_sesion,
+                s.fecha,
+                s.hora_inicio,
+                COALESCE(s.hora_fin, '-') AS hora_fin,
+                s.estado,
+                {CONTEO_ESTADOS}
+            FROM sesiones AS s
+            LEFT JOIN registros AS r ON r.id_sesion = s.id_sesion
+            WHERE s.id_clase = ?
+            GROUP BY s.id_sesion
+            ORDER BY s.fecha DESC, s.hora_inicio DESC
+        """, (id_clase,)).fetchall()
+
+        return [dict(f) for f in filas]
+
 def contar_sesiones_finalizadas(id_clase):
     """Número de sesiones ya finalizadas de una clase."""
 
@@ -378,6 +399,16 @@ def contar_sesiones_finalizadas(id_clase):
 
         return fila["total"]
 
+def contar_sesiones_finalizadas_y_programadas(id_clase):
+    """Total de sesiones finalizadas y programadas de una clase."""
+    with conectar() as conn:
+        fila = conn.execute("""
+            SELECT COUNT(*) AS total
+            FROM sesiones
+            WHERE id_clase = ? AND estado IN ('finalizada', 'programada')
+        """, (id_clase,)).fetchone()
+
+        return fila["total"]
 # --------------------
 # Sesiones
 # --------------------

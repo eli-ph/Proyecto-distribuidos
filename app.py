@@ -49,14 +49,18 @@ def vista_lista_general():
         clase = clases[0]
 
     alumnos = database.obtener_lista_general(clase['id_clase']) if clase else []
-    sesiones = database.contar_sesiones_finalizadas(clase['id_clase']) if clase else 0
-
+    sesiones_historial = database.obtener_historial_sesiones_clase(clase['id_clase']) if clase else []  
+    total_sesiones = (
+        database.contar_sesiones_finalizadas_y_programadas(clase['id_clase'])
+        if clase else 0
+    )
     return render_template(
         'lista_general.html',
         clases=clases,
         clase=clase,
         alumnos=alumnos,
-        sesiones=sesiones
+        total_sesiones=total_sesiones,
+        sesiones_historial=sesiones_historial  
     )
 
 @app.route('/alumno/<cuenta>')

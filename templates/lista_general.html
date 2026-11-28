@@ -6,18 +6,47 @@
     <title>Lista General de Asistencia</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_laptop.css') }}">
     <style>
+        .barra-controles {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
         .filtro-clase {
             display: flex;
             align-items: center;
             gap: 12px;
             flex-wrap: wrap;
-            margin-bottom: 20px;
         }
 
         .filtro-clase select {
             padding: 10px;
             border-radius: 6px;
             min-width: 240px;
+        }
+
+        .tabs-vista {
+            display: flex;
+            gap: 8px;
+        }
+
+        .tab-btn {
+            padding: 9px 14px;
+            border-radius: 7px;
+            border: 1px solid #334155;
+            background: #1e293b;
+            color: #cbd5e1;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .tab-btn.activa {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
         }
 
         .centrado {
@@ -29,8 +58,42 @@
             padding: 20px;
             opacity: 0.7;
         }
-        .link-perfil{
-            color: blanchedalmond;
+
+        .link-perfil {
+            color: #38bdf8;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .link-perfil:hover {
+            text-decoration: underline;
+        }
+
+        .oculto {
+            display: none;
+        }
+
+        .badge-sesion {
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .sesion-finalizada {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+
+        .sesion-activa {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+        }
+
+        .sesion-programada {
+            background: rgba(148, 163, 184, 0.15);
+            color: #cbd5e1;
         }
     </style>
 </head>
@@ -38,10 +101,10 @@
     <div class="container">
         <div class="header-dash">
             <div>
-                <h1 class="titulo_principal">Lista General de Alumnos</h1>
+                <h1 class="titulo_principal">Lista General y Registros de Clase</h1>
                 <p class="subtext">
                     {% if clase %}
-                        {{ clase.nombre }} · {{ sesiones }} sesión(es) finalizada(s)
+                        {{ clase.nombre }} · {{ total_sesiones }} sesión(es) (finalizadas y programadas)
                     {% else %}
                         Historial acumulado por clase
                     {% endif %}
@@ -50,21 +113,71 @@
             <a href="/" class="btn-secondary">Volver a tabla en tiempo real</a>
         </div>
 
-        {% if clases %}
-        <!-- Al cambiar la clase se recarga la página con ?clase=ID -->
-        <form class="filtro-clase" method="get" action="/lista-general">
-            <label for="clase">Clase:</label>
-            <select id="clase" name="clase" onchange="this.form.submit()">
-                {% for c in clases %}
-                <option value="{{ c.id_clase }}" {% if clase and c.id_clase == clase.id_clase %}selected{% endif %}>
-                    {{ c.nombre }}
-                </option>
-                {% endfor %}
-            </select>
-        </form>
-        {% endif %}
+        <div class="barra-controles">
+            {% if clases %}
+            <form class="filtro-clase" method="get" action="/lista-general">
+                <label for="clase">Clase:</label>
+                <select id="clase" name="clase" onchange="this.form.submit()">
+                    {% for c in clases %}
+                    <option value="{{ c.id_clase }}" {% if clase and c.id_clase == clase.id_clase %}selected{% endif %}>
+                        {{ c.nombre }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+            {% endif %}
 
-        <div class="table-container">
+            <!--  Seleccionar entre historial por sesión y lista por alumno -->
+            <div class="tabs-vista">
+                <button type="button" id="tab-sesiones" class="tab-btn activa" onclick="cambiarVista('sesiones')">
+                    Registros por clase (sesiones)
+                </button>
+                <button type="button" id="tab-alumnos" class="tab-btn" onclick="cambiarVista('alumnos')">
+                    Lista por alumno
+                </button>
+            </div>
+        </div>
+
+        <!-- VISTA 1: HISTORIAL POR SESIÓN DE CLASE -->
+        <div id="vista-sesiones" class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th class="centrado">Hora inicial</th>
+                        <th class="centrado">Hora final</th>
+                        <th class="centrado">Total de asistencias</th>
+                        <th class="centrado">Total de retardos</th>
+                        <th class="centrado">Total de faltas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sesiones_historial %}
+                    <tr>
+                        <td><strong>{{ s.fecha }}</strong></td>
+                        <td class="centrado">{{ s.hora_inicio }}</td>
+                        <td class="centrado">{{ s.hora_fin }}</td>
+                        <td class="centrado" style="color: #34d399; font-weight: bold;">{{ s.asistencias }}</td>
+                        <td class="centrado" style="color: #fbbf24; font-weight: bold;">{{ s.retardos }}</td>
+                        <td class="centrado" style="color: #f87171; font-weight: bold;">{{ s.faltas }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="tabla-vacia">
+                            {% if clases %}
+                                No hay sesiones registradas en esta clase.
+                            {% else %}
+                                No hay clases registradas.
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- VISTA 2: LISTA GENERAL POR ALUMNO -->
+        <div id="vista-alumnos" class="table-container oculto">
             <table>
                 <thead>
                     <tr>
@@ -81,7 +194,6 @@
                     <tr>
                         <td><code>{{ alumno.numero_de_cuenta }}</code></td>
                         <td>
-                            <!-- Enlace al perfil individual -->
                             <a href="/alumno/{{ alumno.numero_de_cuenta }}" class="link-perfil">
                                 {{ alumno.nombre }}
                             </a>
@@ -106,5 +218,16 @@
             </table>
         </div>
     </div>
+
+    <script>
+        function cambiarVista(vista) {
+            const esSesiones = vista === 'sesiones';
+            document.getElementById('vista-sesiones').classList.toggle('oculto', !esSesiones);
+            document.getElementById('vista-alumnos').classList.toggle('oculto', esSesiones);
+
+            document.getElementById('tab-sesiones').classList.toggle('activa', esSesiones);
+            document.getElementById('tab-alumnos').classList.toggle('activa', !esSesiones);
+        }
+    </script>
 </body>
 </html>
